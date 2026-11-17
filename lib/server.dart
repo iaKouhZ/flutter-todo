@@ -46,6 +46,19 @@ const statuses = {'active': '进行中', 'planned': '规划中', 'done': '已完
 String textOf(Element? node, String selector) =>
     node?.querySelector(selector)?.text.trim() ?? '';
 
+class DueSubtask {
+  const DueSubtask(this.title, this.deadline);
+  final String title, deadline;
+
+  static List<DueSubtask> fromRow(Element row) => row
+      .querySelectorAll('.tl-row__subitems > li')
+      .map((item) => DueSubtask(
+        textOf(item, 'span:first-child'), textOf(item, '.tl-row__subdue'),
+      ))
+      .where((subtask) => subtask.title.isNotEmpty)
+      .toList(growable: false);
+}
+
 class Task {
   const Task({
     required this.id,
@@ -60,9 +73,11 @@ class Task {
     required this.pinned,
     required this.repeat,
     required this.url,
+    this.dueSubtasks = const [],
   });
   final String id, title, date, deadline, category, status, repeat, url;
   final bool done, overdue, tracked, pinned;
+  final List<DueSubtask> dueSubtasks;
 
   factory Task.fromRow(Element row) {
     final status = row.querySelector('.tl-status');
@@ -82,6 +97,7 @@ class Task {
       pinned: row.querySelector('.tl-pin-mark') != null,
       repeat: textOf(row, '.tl-repeat-mark'),
       url: row.querySelector('.tl-row__link')?.attributes['href'] ?? '',
+      dueSubtasks: DueSubtask.fromRow(row),
     );
   }
 }

@@ -5,6 +5,7 @@ import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
 import org.json.JSONArray
+import org.json.JSONObject
 import java.security.KeyStore
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
@@ -12,7 +13,8 @@ import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
 internal data class ConnectionSettings(val revision: Long, val url: String?, val password: String?)
-internal data class WidgetSnapshot(val state: String, val rows: List<String>)
+internal data class WidgetRow(val title: String, val deadline: String)
+internal data class WidgetSnapshot(val state: String, val rows: List<WidgetRow>)
 
 internal class LedgerStore(context: Context) {
     private val prefs = context.getSharedPreferences("ledger_settings", Context.MODE_PRIVATE)
@@ -54,14 +56,29 @@ internal class LedgerStore(context: Context) {
         val rows = JSONArray(prefs.getString("rows", "[]"))
         WidgetSnapshot(
             prefs.getString("state", "loading") ?: "loading",
-            List(rows.length()) { rows.getString(it) },
+            List(rows.length()) { index ->
+                val row = rows.optJSONObject(index)
+                if (row != null) {
+                    WidgetRow(row.optString("title"), row.optString("deadline"))
+                } else {
+                    // Older builds stored each row as a date-first string.
+                    val old = rows.optString(index).split("  ·  ", limit = 2)
+                    if (old.size == 2) WidgetRow(old[1], old[0]) else WidgetRow(old[0], "")
+                }
+            },
         )
     }
 
-    fun publish(revision: Long, state: String, rows: List<String>? = null) = synchronized(lock) {
+    fun publish(revision: Long, state: String, rows: List<WidgetRow>? = null) = synchronized(lock) {
         if (revision == prefs.getLong("revision", 0)) {
             val editor = prefs.edit().putString("state", state)
-            if (rows != null) editor.putString("rows", JSONArray(rows).toString())
+            if (rows != null) {
+                val encoded = JSONArray()
+                for (row in rows) {
+                    encoded.put(JSONObject().put("title", row.title).put("deadline", row.deadline))
+                }
+                editor.putString("rows", encoded.toString())
+            }
             editor.apply()
         }
     }

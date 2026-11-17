@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:html/parser.dart';
 import 'package:todo_endfield/server.dart';
 import 'package:todo_endfield/session.dart';
 
@@ -171,6 +172,7 @@ void main() {
     expect(feed.admin, isFalse);
     final task = feed.groups.single.tasks.single;
     expect(task.title, '交作业');
+    expect(task.dueSubtasks, isEmpty);
     expect((await client.detail(task)).body, '数学');
     await expectLater(client.change(task, 'complete'), throwsA(isA<LoginRequired>()));
     expect(written, isEmpty);
@@ -232,6 +234,19 @@ void main() {
     await session.setServer(client.base.toString());
     expect(session.feed, isNull);
     expect(session.gate, contains('关闭访客访问'));
+  });
+
+  test('tracked rows keep the web feed order and relative deadlines of subtasks', () async {
+    final fixture = '''<main class="tl-main__scroll">
+      ${row.replaceFirst('</a>', '''
+      <ul class="tl-row__subitems">
+        <li><span>先校对</span><span class="tl-row__subdue">今天 · 12月31日 15:00</span></li>
+        <li><span>再提交</span><span class="tl-row__subdue">明天 · 1月1日</span></li>
+      </ul></a>''')}
+    </main>''';
+    final tasks = Feed(parse(fixture)).groups.single.tasks;
+    expect(tasks.single.dueSubtasks.map((s) => s.title), ['先校对', '再提交']);
+    expect(tasks.single.dueSubtasks.last.deadline, '明天 · 1月1日');
   });
 
   test('new subtask submits its optional deadline in the detail form', () async {

@@ -23,23 +23,53 @@
             android:textSize="14sp" android:text="@string/widget_title" />
     </LinearLayout>
     <TextView android:id="@+id/widget_status"
-        android:layout_width="match_parent" android:layout_height="0dp"
-        android:layout_weight="1" android:gravity="center_vertical"
+        android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:layout_marginTop="3dp"
         android:ellipsize="end" android:maxLines="2"
         android:text="@string/widget_loading" android:textColor="@color/deadline_widget_secondary_text" android:textSize="12sp" />
-    <TextView android:id="@+id/widget_first"
-        android:layout_width="match_parent" android:layout_height="0dp"
-        android:layout_weight="1" android:gravity="center_vertical" android:fontFeatureSettings="tnum"
-        android:singleLine="true" android:ellipsize="end" android:visibility="gone"
-        android:textColor="@color/deadline_widget_text" android:textSize="12sp" />
-    <TextView android:id="@+id/widget_second"
-        android:layout_width="match_parent" android:layout_height="0dp"
-        android:layout_weight="1" android:gravity="center_vertical" android:fontFeatureSettings="tnum"
-        android:singleLine="true" android:ellipsize="end" android:visibility="gone"
-        android:textColor="@color/deadline_widget_text" android:textSize="12sp" />
-    <TextView android:id="@+id/widget_third"
-        android:layout_width="match_parent" android:layout_height="0dp"
-        android:layout_weight="1" android:gravity="center_vertical" android:fontFeatureSettings="tnum"
-        android:singleLine="true" android:ellipsize="end" android:visibility="gone"
-        android:textColor="@color/deadline_widget_text" android:textSize="12sp" />
+    <LinearLayout android:id="@+id/widget_first"
+        android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:layout_marginTop="2dp" android:gravity="center_vertical"
+        android:orientation="horizontal" android:visibility="gone">
+        <TextView android:id="@+id/widget_first_title"
+            android:layout_width="0dp" android:layout_height="wrap_content"
+            android:layout_weight="1" android:includeFontPadding="false"
+            android:singleLine="true" android:ellipsize="end"
+            android:textColor="@color/deadline_widget_text" android:textSize="12sp" />
+        <TextView android:id="@+id/widget_first_deadline"
+            android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:layout_marginStart="8dp" android:includeFontPadding="false"
+            android:fontFeatureSettings="tnum" android:singleLine="true"
+            android:textColor="@color/deadline_widget_secondary_text" android:textSize="12sp" />
+    </LinearLayout>
+    <LinearLayout android:id="@+id/widget_second"
+        android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:layout_marginTop="2dp" android:gravity="center_vertical"
+        android:orientation="horizontal" android:visibility="gone">
+        <TextView android:id="@+id/widget_second_title"
+            android:layout_width="0dp" android:layout_height="wrap_content"
+            android:layout_weight="1" android:includeFontPadding="false"
+            android:singleLine="true" android:ellipsize="end"
+            android:textColor="@color/deadline_widget_text" android:textSize="12sp" />
+        <TextView android:id="@+id/widget_second_deadline"
+            android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:layout_marginStart="8dp" android:includeFontPadding="false"
+            android:fontFeatureSettings="tnum" android:singleLine="true"
+            android:textColor="@color/deadline_widget_secondary_text" android:textSize="12sp" />
+    </LinearLayout>
+    <LinearLayout android:id="@+id/widget_third"
+        android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:layout_marginTop="2dp" android:gravity="center_vertical"
+        android:orientation="horizontal" android:visibility="gone">
+        <TextView android:id="@+id/widget_third_title"
+            android:layout_width="0dp" android:layout_height="wrap_content"
+            android:layout_weight="1" android:includeFontPadding="false"
+            android:singleLine="true" android:ellipsize="end"
+            android:textColor="@color/deadline_widget_text" android:textSize="12sp" />
+        <TextView android:id="@+id/widget_third_deadline"
+            android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:layout_marginStart="8dp" android:includeFontPadding="false"
+            android:fontFeatureSettings="tnum" android:singleLine="true"
+            android:textColor="@color/deadline_widget_secondary_text" android:textSize="12sp" />
+    </LinearLayout>
 </LinearLayout>

@@ -25,13 +25,17 @@ class LedgerApp extends StatelessWidget {
         .copyWith(surface: surface, primary: dark ? signal : ink,
           onPrimary: dark ? ink : Colors.white, error: dark
             ? const Color(0xffffa597) : const Color(0xffa22e20));
+    const dialogShape = RoundedRectangleBorder(
+      borderRadius: BorderRadius.all(Radius.circular(20)),
+    );
     return ThemeData(
       colorScheme: colors,
       scaffoldBackgroundColor: background,
       appBarTheme: AppBarTheme(backgroundColor: background, surfaceTintColor: Colors.transparent),
       dividerColor: dark ? const Color(0xff44463f) : const Color(0xffc7c7bd),
-      dialogTheme: DialogThemeData(backgroundColor: surface,
-        shape: const RoundedRectangleBorder()),
+      dialogTheme: DialogThemeData(backgroundColor: surface, shape: dialogShape),
+      datePickerTheme: const DatePickerThemeData(shape: dialogShape),
+      timePickerTheme: const TimePickerThemeData(shape: dialogShape),
       inputDecorationTheme: const InputDecorationTheme(
         border: OutlineInputBorder(borderRadius: BorderRadius.zero),
       ),
@@ -367,21 +371,56 @@ class TaskTile extends StatelessWidget {
   Widget build(BuildContext context) => DecoratedBox(
     decoration: BoxDecoration(color: Theme.of(context).colorScheme.surface,
       border: Border(bottom: BorderSide(color: Theme.of(context).dividerColor))),
-    child: ListTile(
-      contentPadding: const EdgeInsets.only(left: 3, right: 10),
-      onTap: open,
-      leading: Checkbox(value: task.done, onChanged: complete == null ? null : (_) => complete!(),
-        semanticLabel: task.done ? '标记未完成' : '标记完成'),
-      title: Text(task.title, style: TextStyle(fontWeight: FontWeight.w700,
-        decoration: task.done ? TextDecoration.lineThrough : null)),
-      subtitle: Text([
-        if (task.deadline.isNotEmpty) task.deadline,
-        if (task.pinned) '置顶',
-        if (task.tracked) '追踪',
-        if (task.repeat.isNotEmpty) task.repeat,
-      ].join(' · '), style: dateStyle.copyWith(
-        color: task.overdue ? Theme.of(context).colorScheme.error : null)),
-      trailing: const Icon(Icons.chevron_right),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        ListTile(
+          contentPadding: const EdgeInsets.only(left: 3, right: 10),
+          onTap: open,
+          leading: Checkbox(value: task.done, onChanged: complete == null ? null : (_) => complete!(),
+            semanticLabel: task.done ? '标记未完成' : '标记完成'),
+          title: Text(task.title, style: TextStyle(fontWeight: FontWeight.w700,
+            decoration: task.done ? TextDecoration.lineThrough : null)),
+          subtitle: Text([
+            if (task.deadline.isNotEmpty) task.deadline,
+            if (task.pinned) '置顶',
+            if (task.tracked) '追踪',
+            if (task.repeat.isNotEmpty) task.repeat,
+          ].join(' · '), style: dateStyle.copyWith(
+            color: task.overdue ? Theme.of(context).colorScheme.error : null)),
+          trailing: const Icon(Icons.chevron_right),
+        ),
+        if (task.dueSubtasks.isNotEmpty)
+          InkWell(
+            onTap: open,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(58, 0, 14, 8),
+              child: Column(
+                children: [
+                  for (final subtask in task.dueSubtasks)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Padding(
+                            padding: EdgeInsets.only(right: 5),
+                            child: Icon(Icons.subdirectory_arrow_right, size: 15),
+                          ),
+                          Expanded(child: Text(subtask.title)),
+                          const SizedBox(width: 8),
+                          Text(subtask.deadline, style: dateStyle.copyWith(
+                            fontSize: 12,
+                            color: Theme.of(context).colorScheme.onSurfaceVariant,
+                          )),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+      ],
     ),
   );
 }

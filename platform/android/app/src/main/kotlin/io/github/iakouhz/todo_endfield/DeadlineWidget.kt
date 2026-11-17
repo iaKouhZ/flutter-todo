@@ -90,10 +90,16 @@ class DeadlineWidget : AppWidgetProvider() {
                 else R.string.widget_title))
             views.setTextViewText(R.id.widget_status, context.getString(message))
             views.setViewVisibility(R.id.widget_status, if (rows.isEmpty()) View.VISIBLE else View.GONE)
-            listOf(R.id.widget_first, R.id.widget_second, R.id.widget_third).forEachIndexed { index, id ->
+            val rowViews = listOf(
+                Triple(R.id.widget_first, R.id.widget_first_title, R.id.widget_first_deadline),
+                Triple(R.id.widget_second, R.id.widget_second_title, R.id.widget_second_deadline),
+                Triple(R.id.widget_third, R.id.widget_third_title, R.id.widget_third_deadline),
+            )
+            rowViews.forEachIndexed { index, (container, title, deadline) ->
                 val row = rows.getOrNull(index)
-                views.setViewVisibility(id, if (row == null) View.GONE else View.VISIBLE)
-                views.setTextViewText(id, row ?: "")
+                views.setViewVisibility(container, if (row == null) View.GONE else View.VISIBLE)
+                views.setTextViewText(title, row?.title.orEmpty())
+                views.setTextViewText(deadline, row?.deadline.orEmpty())
             }
             val widgetIds = ids(context)
             if (widgetIds.isNotEmpty()) manager.updateAppWidget(widgetIds, views)

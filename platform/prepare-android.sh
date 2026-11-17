@@ -19,3 +19,11 @@ dependencies {
 }
 GRADLE
 fi
+if ! grep -q 'junit:junit' android/app/build.gradle.kts; then
+  cat >> android/app/build.gradle.kts <<'GRADLE'
+
+dependencies {
+    testImplementation("junit:junit:4.13.2")
+}
+GRADLE
+fi
