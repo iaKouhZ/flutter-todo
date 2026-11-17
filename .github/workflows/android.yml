@@ -38,7 +38,8 @@ jobs:
       - run: flutter analyze
       - run: flutter test
       - name: Build Android APK
-        run: flutter build apk --release --build-number "$((GITHUB_RUN_NUMBER + 1))"
+        timeout-minutes: 15
+        run: flutter build apk --release --no-pub --build-number "$((GITHUB_RUN_NUMBER + 1))"
       - name: Test Android widget
         working-directory: android
         run: ./gradlew :app:testReleaseUnitTest
