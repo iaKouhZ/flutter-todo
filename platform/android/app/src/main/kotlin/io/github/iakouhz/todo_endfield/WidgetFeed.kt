@@ -96,6 +96,8 @@ internal class WidgetFeed(server: String) {
         }
     }
 
+    private data class SubtaskGroup(val title: String, val deadlines: List<Deadline>)
+
     companion object {
         private val isoDate = Regex("[0-9]{4}-[0-9]{2}-[0-9]{2}")
         private val timeAtEnd = Regex("[0-9]{2}:[0-9]{2}$")
@@ -124,50 +126,79 @@ internal class WidgetFeed(server: String) {
                 val due = row.selectFirst(".tl-row__deadline")?.text().orEmpty()
                 val time = timeAtEnd.find(due)?.value.orEmpty()
                 if (id.isBlank() || title.isBlank() || !isoDate.matches(date)) return@mapNotNull null
-                Deadline("task:$id", title, date, time, row.hasClass("tl-row--overdue") ||
+                Deadline(id, title, date, time, row.hasClass("tl-row--overdue") ||
                     "$date ${time.ifEmpty { "23:59" }}" < now)
             }
 
-        private fun subtasks(doc: Document, now: String): List<Deadline> {
+        private fun subtasks(doc: Document, now: String): Map<String, SubtaskGroup> {
             val calendarDate = SimpleDateFormat("yyyy-MM-dd", Locale.US).apply {
                 timeZone = TimeZone.getTimeZone("UTC")
                 isLenient = false
             }
-            val today = calendarDate.parse(now.substring(0, 10)) ?: return emptyList()
-            return doc.select(rowSelector).flatMap { row ->
+            val today = calendarDate.parse(now.substring(0, 10)) ?: return emptyMap()
+            val groups = linkedMapOf<String, SubtaskGroup>()
+            for (row in doc.select(rowSelector)) {
                 val id = row.attr("data-task-id")
-                if (id.isBlank() || row.selectFirst(".tl-track-mark") == null ||
+                val parentTitle = row.selectFirst(".tl-row__title")?.text().orEmpty()
+                if (id.isBlank() || parentTitle.isBlank() || id in groups ||
+                    row.selectFirst(".tl-track-mark") == null ||
                     row.selectFirst(".tl-status--done") != null
-                ) return@flatMap emptyList()
+                ) continue
                 // Only the server's near-term list has these rows. A completed
                 // occurrence can carry children while its series is still active.
-                row.select(".tl-row__subitems > li").mapIndexedNotNull { index, item ->
+                val deadlines = row.select(".tl-row__subitems > li").mapNotNull { item ->
                     val title = item.selectFirst("span:first-child")?.text().orEmpty()
                     val label = item.selectFirst(".tl-row__subdue")?.text().orEmpty()
-                    val match = subtaskLabel.matchEntire(label) ?: return@mapIndexedNotNull null
+                    val match = subtaskLabel.matchEntire(label) ?: return@mapNotNull null
                     val offset = when (match.groupValues[1]) {
                         "今天" -> 0
                         "明天" -> 1
-                        else -> match.groupValues[2].toIntOrNull() ?: return@mapIndexedNotNull null
+                        else -> match.groupValues[2].toIntOrNull() ?: return@mapNotNull null
                     }
                     val date = calendarDate.format(Date(today.time + offset * 86_400_000L))
                     if (!isoDate.matches(date) || title.isBlank() ||
                         date.substring(5, 7).toInt() != match.groupValues[3].toIntOrNull() ||
                         date.substring(8, 10).toInt() != match.groupValues[4].toIntOrNull()
-                    ) return@mapIndexedNotNull null
+                    ) return@mapNotNull null
                     val time = match.groupValues[5]
-                    Deadline("subtask:$id:$index", "↳ $title", date, time,
+                    Deadline(id, "↳ $title", date, time,
                         "$date ${time.ifEmpty { "23:59" }}" < now)
                 }
+                if (deadlines.isNotEmpty()) groups[id] = SubtaskGroup(parentTitle, deadlines)
             }
+            return groups
+        }
+
+        private fun nearestFirst(candidates: List<Deadline>): List<Deadline> {
+            val upcoming = candidates.filterNot { it.overdue }.sortedBy { it.key }
+            val overdue = candidates.filter { it.overdue }.sortedByDescending { it.key }
+            return upcoming + overdue
         }
 
         internal fun rows(all: Document, tracked: Document, now: String): List<WidgetRow> {
-            val candidates = tasks(all, now) + tasks(tracked, now) + subtasks(tracked, now)
-            val upcoming = candidates.filterNot { it.overdue }.sortedBy { it.key }
-            val overdue = candidates.filter { it.overdue }.sortedByDescending { it.key }
-            return (upcoming + overdue).distinctBy { it.id }.take(3)
-                .map { it.display(now.substring(0, 4)) }
+            val parents = nearestFirst(tasks(all, now) + tasks(tracked, now))
+                .distinctBy { it.id }.associateBy { it.id }
+            val children = subtasks(tracked, now)
+            val groups = nearestFirst(parents.values + children.values.flatMap { it.deadlines })
+                .distinctBy { it.id }
+            val year = now.substring(0, 4)
+            return buildList {
+                for (group in groups) {
+                    val spots = 3 - size
+                    if (spots == 0) break
+                    val parent = parents[group.id]
+                    val subtasks = children[group.id]
+                    if (parent == null) {
+                        if (spots < 2 || subtasks == null) continue
+                        add(WidgetRow(subtasks.title, ""))
+                    } else {
+                        add(parent.display(year))
+                    }
+                    subtasks?.deadlines?.sortedBy { it.key }?.take(spots - 1)?.forEach {
+                        add(it.display(year))
+                    }
+                }
+            }
         }
     }
 }

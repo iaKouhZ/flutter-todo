@@ -31,8 +31,8 @@ class WidgetFeedTest {
         val tracked = row(4, "2026-12-31", "已完成的单次发生",
             child("元旦检查", "明天 · 1月1日 08:00"), tracked = true, doneOccurrence = true)
         assertEquals(
-            listOf(WidgetRow("年末", "12/31"), WidgetRow("↳ 元旦检查", "2027-01-01 08:00"),
-                WidgetRow("元旦", "2027-01-01")),
+            listOf(WidgetRow("年末", "12/31"), WidgetRow("已完成的单次发生", ""),
+                WidgetRow("↳ 元旦检查", "2027-01-01 08:00")),
             WidgetFeed.rows(doc(previous, nextYear, thisYear), doc(tracked), "2026-12-31 09:00"),
         )
     }
@@ -48,6 +48,36 @@ class WidgetFeedTest {
         val complete = row(4, "", "已完成",
             child("已完成", "今天 · 12月31日"), tracked = true, doneTask = true)
         val rows = WidgetFeed.rows(doc(allOnly), doc(included, untracked, complete), "2026-12-31 09:00")
-        assertEquals(List(2) { WidgetRow("↳ 检查", "2027-01-02") }, rows)
+        assertEquals(listOf(WidgetRow("母任务", "")) +
+            List(2) { WidgetRow("↳ 检查", "2027-01-02") }, rows)
+    }
+
+    @Test
+    fun putsTheDatedParentBeforeItsChildrenEvenWhenItIsDueLater() {
+        val parent = row(1, "2027-01-18", "微积分 A(I)")
+        val tracked = row(1, "2027-01-18", "微积分 A(I)",
+            child("微分中值定理", "T+2 · 1月2日") +
+                child("洛必达法则", "今天 · 12月31日 13:30") +
+                child("同日更晚", "今天 · 12月31日 16:00"), tracked = true)
+        val unrelated = row(2, "2027-01-01", "其他主任务")
+        assertEquals(
+            listOf(WidgetRow("微积分 A(I)", "2027-01-18"),
+                WidgetRow("↳ 洛必达法则", "12/31 13:30"), WidgetRow("↳ 同日更晚", "12/31 16:00")),
+            WidgetFeed.rows(doc(parent, unrelated), doc(tracked), "2026-12-31 09:00"),
+        )
+    }
+
+    @Test
+    fun skipsAnUndatedParentWhenNoChildCanFitBelowIt() {
+        val first = row(1, "2026-12-31", "第一项")
+        val second = row(2, "2027-01-01", "第二项")
+        val third = row(3, "2027-01-04", "第三项")
+        val undated = row(4, "", "无截止主任务",
+            child("检查", "T+2 · 1月2日"), tracked = true)
+        assertEquals(
+            listOf("第一项", "第二项", "第三项"),
+            WidgetFeed.rows(doc(third, first, second), doc(undated), "2026-12-31 09:00")
+                .map { it.title },
+        )
     }
 }
