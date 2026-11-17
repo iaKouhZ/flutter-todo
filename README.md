@@ -2,7 +2,7 @@
 
 Todo Endfield 的 Flutter 客户端。界面使用原项目的奶油纸底、墨黑文字和信号黄，功能包括追踪、规划、已完成、全部、分类筛选、搜索与任务详情。
 
-1. 到 [Actions](https://github.com/iaKouhZ/flutter-todo/actions) 打开一次成功的 **Android APK** 运行，下载 **todo-endfield-android** 并解压安装 APK。
+1. 从 [GitHub Releases](https://github.com/iaKouhZ/flutter-todo/releases) 下载 `flutter-todo.apk` 后安装。首批调试签名 APK 与正式签名不同，切换时需先卸载调试版。
 2. 首次打开填写原站的根地址，例如 `https://example.com/todo/`。客户端支持根目录与子目录部署，也支持原项目的两种 URL 模式。
 3. 允许访客访问时直接进入首页。新增、编辑、删除、勾选、追踪、置顶或修改子任务时需要密码。关闭访客访问的服务器会先显示登录界面。密码使用 Android Keystore 加密保存。
 4. 在桌面长按空白处，从小组件列表添加 **最近到期**（4×2）。它最多显示三项未完成、有截止日期的任务，优先显示即将到期的事项，有空位时补入最近逾期的事项。系统按约 30 分钟调度，打开应用或修改任务也会请求同步。桌面可直接看到任务标题。
@@ -13,4 +13,17 @@ Todo Endfield 的 Flutter 客户端。界面使用原项目的奶油纸底、墨
 
 ## 构建
 
-GitHub Actions 使用 Flutter 3.38.9，在 runner 上生成 Android 工程骨架并叠加仓库的 Android 平台文件，然后运行静态分析、协议测试和 APK 构建。Actions APK 使用 Flutter 默认的调试签名供安装测试，独立 runner 的签名可能不同。
+GitHub Actions 使用 Flutter 3.38.9，在 runner 上生成 Android 工程骨架并叠加仓库的 Android 平台文件，然后运行静态分析、协议测试和 APK 构建。正式发布使用固定的 Android 发布签名，并逐个核对 APK 的证书指纹。签名后的 APK 以原始文件上传至 GitHub Releases。
+
+### 配置发布签名
+
+将备份中的 PKCS#12 密钥库与密码设置成以下仓库 Actions Secrets。密钥别名为 `todo-release`。
+
+```bash
+base64 -w 0 flutter-todo-release.p12 | gh secret set ANDROID_KEYSTORE_B64 -R iaKouhZ/flutter-todo
+gh secret set ANDROID_KEYSTORE_PASSWORD -R iaKouhZ/flutter-todo < flutter-todo-release-password.txt
+```
+
+Windows 用户可用 `[Convert]::ToBase64String([IO.File]::ReadAllBytes((Resolve-Path flutter-todo-release.p12)))` 生成第一项。第二项填写密码文件中的一行内容。也可在仓库的 Settings → Secrets and variables → Actions 页面添加这两项。
+
+配置后可手动运行 `Android APK`，也可由后续对 `main` 的变更触发构建。

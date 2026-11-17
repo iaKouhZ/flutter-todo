@@ -1,6 +1,10 @@
 .dart_tool/
 .flutter-plugins-dependencies
 build/
-android/
+/android/
+/dist/
 .idea/
 *.iml
+*.p12
+*.jks
+flutter-todo-release-password.txt

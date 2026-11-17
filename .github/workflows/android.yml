@@ -3,6 +3,7 @@ on:
   push:
     branches: [main]
     paths:
+      - '.github/workflows/android.yml'
       - 'lib/**'
       - 'test/**'
       - 'platform/**'
@@ -12,15 +13,17 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
@@ -34,9 +37,47 @@ jobs:
       - run: flutter pub get
       - run: flutter analyze
       - run: flutter test
-      - run: flutter build apk --release
-      - uses: actions/upload-artifact@v4
-        with:
-          name: todo-endfield-android
-          path: build/app/outputs/flutter-apk/app-release.apk
-          if-no-files-found: error
+      - name: Build Android APK
+        run: flutter build apk --release --build-number "$((GITHUB_RUN_NUMBER + 1))"
+      - name: Sign and verify release APK
+        id: signing
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        env:
+          ANDROID_KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$ANDROID_KEYSTORE_B64" && -z "$ANDROID_KEYSTORE_PASSWORD" ]]; then
+            if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]]; then
+              echo "::error::Configure the Android signing repository secrets before publishing a release."
+              exit 1
+            fi
+            echo "::notice::Android signing secrets are not configured. Build checks ran without publishing a release."
+            exit 0
+          fi
+          : "${ANDROID_KEYSTORE_B64:?Missing Android signing keystore}"
+          : "${ANDROID_KEYSTORE_PASSWORD:?Missing Android signing password}"
+          umask 077
+          keyfile=$(mktemp "$RUNNER_TEMP/todo-keystore.XXXXXX")
+          trap 'rm -f "$keyfile"' EXIT
+          printf '%s' "$ANDROID_KEYSTORE_B64" | base64 --decode > "$keyfile"
+
+          tools_dir=$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)
+          export APKSIGNER_JAR="$tools_dir/lib/apksigner.jar"
+          bash platform/sign-android.sh build/app/outputs/flutter-apk/app-release.apk \
+            dist/flutter-todo.apk "$keyfile"
+          echo "ready=true" >> "$GITHUB_OUTPUT"
+      - name: Publish APK on GitHub Releases
+        if: steps.signing.outputs.ready == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="android-build-$GITHUB_RUN_NUMBER"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" dist/flutter-todo.apk --clobber
+          else
+            gh release create "$tag" "dist/flutter-todo.apk#Android APK" \
+              --target "$GITHUB_SHA" --title "Android build $GITHUB_RUN_NUMBER" \
+              --notes "Signed Android APK for commit $GITHUB_SHA."
+          fi
