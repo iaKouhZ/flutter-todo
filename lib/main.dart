@@ -139,9 +139,9 @@ class _WorkspaceState extends State<Workspace> with WidgetsBindingObserver {
       final model = await protected(() => session.server!.editor(task));
       if (!mounted || model == null) return;
       await Navigator.of(context).push<void>(MaterialPageRoute(
-        builder: (_) => EditScreen(model: model, save: (changes) async {
+        builder: (_) => EditScreen(model: model, save: (changes, deadlines) async {
           final saved = await protected(() async {
-            await session.server!.save(task, changes);
+            await session.server!.save(task, changes, subtaskDeadlines: deadlines);
             return true;
           });
           if (saved == true) await session.didWrite();
@@ -161,6 +161,7 @@ class _WorkspaceState extends State<Workspace> with WidgetsBindingObserver {
         builder: (_) => DetailScreen(
           task: task, initial: detail,
           edit: () => openEditor(task),
+          authorize: allowWrite,
           change: (op, index, extra) async {
             if (!await allowWrite()) return false;
             final updated = await protected(() async {
@@ -565,10 +566,11 @@ typedef TaskChange = Future<bool> Function(String, int?, Map<String, String>);
 
 class DetailScreen extends StatefulWidget {
   const DetailScreen({super.key, required this.task, required this.initial, required this.edit,
-    required this.change, required this.reload});
+    required this.authorize, required this.change, required this.reload});
   final Task task;
   final TaskDetail initial;
   final Future<void> Function() edit;
+  final Future<bool> Function() authorize;
   final TaskChange change;
   final Future<TaskDetail> Function() reload;
 
@@ -614,11 +616,43 @@ class _DetailScreenState extends State<DetailScreen> {
     )) ?? false;
 
   Future<void> addSubtask() async {
-    final title = await showDialog<String>(context: context, builder: (_) => const SubtaskDialog());
-    if (title != null && title.isNotEmpty) {
-      await change('subitem_add', extra: {'title': title});
-    }
+    final result = await showDialog<ScheduleResult>(
+      context: context,
+      builder: (_) => const ScheduleDialog(label: '添加子任务', withTitle: true),
+    );
+    if (result == null || !mounted) return;
+    await change('subitem_add', extra: {
+      'title': result.title,
+      'due_date': result.deadline.date,
+      'due_time': result.deadline.time,
+    });
   }
+
+  Future<void> editCompletion() => run(() async {
+    if (!await widget.authorize() || !mounted) return;
+    detail = await widget.reload();
+    if (!mounted) return;
+    final form = detail.completionForm;
+    if (form == null) {
+      throw const TodoError('这项待办目前没有可编辑的完成时间。');
+    }
+    final result = await showDialog<ScheduleResult>(
+      context: context,
+      builder: (_) => ScheduleDialog(
+        label: '编辑完成时间',
+        initial: splitCompletion(detail.completedAt),
+        completion: true,
+      ),
+    );
+    if (result == null || !mounted) return;
+    final stamp = completionStamp(result.deadline);
+    if (stamp == detail.completedAt) return;
+    if (await widget.change('complete', null, {
+      'completed_at': stamp, 'scope': input(form, 'scope'), 'date': input(form, 'date'),
+    }) && mounted) {
+      detail = await widget.reload();
+    }
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -657,6 +691,9 @@ class _DetailScreenState extends State<DetailScreen> {
           FilledButton(onPressed: busy ? null : () => change('complete', extra: {
             'done': (isGuestDetail ? task.done : done) ? '0' : '1',
           }), child: Text((isGuestDetail ? task.done : done) ? '恢复未完成' : '标记完成')),
+          if (detail.completionForm != null || (isGuestDetail && done))
+            OutlinedButton(onPressed: busy ? null : editCompletion,
+              child: const Text('编辑完成时间')),
           OutlinedButton(onPressed: busy ? null : () => change('track', extra: {
             'tracked': (isGuestDetail ? task.tracked : tracked) ? '0' : '1',
           }), child: Text((isGuestDetail ? task.tracked : tracked) ? '取消追踪' : '添加追踪')),
@@ -696,15 +733,108 @@ class _DetailScreenState extends State<DetailScreen> {
   }
 }
 
-class SubtaskDialog extends StatefulWidget {
-  const SubtaskDialog({super.key});
+typedef ScheduleResult = ({String title, Deadline deadline});
 
-  @override
-  State<SubtaskDialog> createState() => _SubtaskDialogState();
+Deadline splitCompletion(String value) {
+  final parts = value.split('T');
+  return parts.length == 2
+      ? (date: parts[0], time: parts[1])
+      : (date: '', time: '');
 }
 
-class _SubtaskDialogState extends State<SubtaskDialog> {
+String completionStamp(Deadline value) => '${value.date}T${value.time}';
+
+class DeadlineFields extends StatelessWidget {
+  const DeadlineFields({
+    super.key,
+    required this.value,
+    required this.onChanged,
+    this.completion = false,
+  });
+
+  final Deadline value;
+  final ValueChanged<Deadline>? onChanged;
+  final bool completion;
+
+  Future<void> pickDate(BuildContext context) async {
+    final initial = DateTime.tryParse(value.date) ?? DateTime.now();
+    final earliest = DateTime(1900);
+    final latest = DateTime(2100, 12, 31);
+    final selected = await showDatePicker(
+      context: context,
+      firstDate: initial.isBefore(earliest) ? initial : earliest,
+      lastDate: initial.isAfter(latest) ? initial : latest,
+      initialDate: initial,
+    );
+    if (selected == null || !context.mounted) return;
+    onChanged?.call((date: selected.toIso8601String().substring(0, 10), time: value.time));
+  }
+
+  Future<void> pickTime(BuildContext context) async {
+    final parsed = DateTime.tryParse('${value.date}T${value.time}Z');
+    final selected = await showTimePicker(
+      context: context,
+      initialTime: parsed != null ? TimeOfDay.fromDateTime(parsed) :
+          completion ? TimeOfDay.now() : const TimeOfDay(hour: 18, minute: 0),
+    );
+    if (selected == null || !context.mounted) return;
+    final hour = selected.hour.toString().padLeft(2, '0');
+    final minute = selected.minute.toString().padLeft(2, '0');
+    onChanged?.call((date: value.date, time: '$hour:$minute'));
+  }
+
+  @override
+  Widget build(BuildContext context) => Wrap(
+    spacing: 8,
+    runSpacing: 6,
+    children: [
+      OutlinedButton(
+        onPressed: onChanged == null ? null : () => pickDate(context),
+        child: Text(value.date.isNotEmpty ? value.date :
+            completion ? '选完成日期' : '选截止日期', style: dateStyle),
+      ),
+      OutlinedButton(
+        onPressed: onChanged == null || value.date.isEmpty ? null : () => pickTime(context),
+        child: Text(value.time.isNotEmpty ? value.time :
+            completion ? '选完成时刻' : '选截止时刻', style: dateStyle),
+      ),
+      if (!completion && value.date.isNotEmpty)
+        TextButton(
+          onPressed: onChanged == null ? null :
+            () => onChanged!((date: '', time: '')),
+          child: const Text('清除截止'),
+        ),
+      if (!completion && value.time.isNotEmpty)
+        TextButton(
+          onPressed: onChanged == null ? null :
+            () => onChanged!((date: value.date, time: '')),
+          child: const Text('仅清除时刻'),
+        ),
+    ],
+  );
+}
+
+class ScheduleDialog extends StatefulWidget {
+  const ScheduleDialog({
+    super.key,
+    required this.label,
+    this.initial = (date: '', time: ''),
+    this.withTitle = false,
+    this.completion = false,
+  });
+
+  final String label;
+  final Deadline initial;
+  final bool withTitle, completion;
+
+  @override
+  State<ScheduleDialog> createState() => _ScheduleDialogState();
+}
+
+class _ScheduleDialogState extends State<ScheduleDialog> {
   final title = TextEditingController();
+  late Deadline deadline = widget.initial;
+
   @override
   void dispose() {
     title.dispose();
@@ -712,22 +842,49 @@ class _SubtaskDialogState extends State<SubtaskDialog> {
   }
 
   @override
-  Widget build(BuildContext context) => AlertDialog(
-    title: const Text('添加子任务'),
-    content: TextField(controller: title, autofocus: true, maxLength: 200,
-      onSubmitted: (_) => Navigator.pop(context, title.text.trim()),
-      decoration: const InputDecoration(labelText: '摘要')),
-    actions: [
-      TextButton(onPressed: () => Navigator.pop(context), child: const Text('取消')),
-      FilledButton(onPressed: () => Navigator.pop(context, title.text.trim()), child: const Text('添加')),
-    ],
-  );
+  Widget build(BuildContext context) {
+    final valid = (!widget.withTitle || title.text.trim().isNotEmpty) &&
+        (!widget.completion || deadline.date.isNotEmpty && deadline.time.isNotEmpty);
+    return AlertDialog(
+      title: Text(widget.label),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (widget.withTitle)
+              TextField(
+                controller: title,
+                autofocus: true,
+                maxLength: 200,
+                onChanged: (_) => setState(() {}),
+                decoration: const InputDecoration(labelText: '摘要'),
+              ),
+            if (widget.completion) const Text('日期和时刻按服务器时区填写。'),
+            DeadlineFields(
+              value: deadline,
+              onChanged: (value) => setState(() => deadline = value),
+              completion: widget.completion,
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('取消')),
+        FilledButton(
+          onPressed: !valid ? null :
+            () => Navigator.pop(context, (title: title.text.trim(), deadline: deadline)),
+          child: Text(widget.withTitle ? '添加' : '保存'),
+        ),
+      ],
+    );
+  }
 }
 
 class EditScreen extends StatefulWidget {
   const EditScreen({super.key, required this.model, required this.save});
   final TaskEditor model;
-  final Future<bool> Function(Map<String, String>) save;
+  final Future<bool> Function(Map<String, String>, Map<String, Deadline>) save;
 
   @override
   State<EditScreen> createState() => _EditScreenState();
@@ -738,8 +895,9 @@ class _EditScreenState extends State<EditScreen> {
   late final body = TextEditingController(text: field('detail'));
   late final interval = TextEditingController(text: field('repeat_interval', '1'));
   late String category = field('category_id');
-  late String date = field('due_date');
-  late String time = field('due_time');
+  late Deadline deadline = (date: field('due_date'), time: field('due_time'));
+  late Deadline completion = splitCompletion(field('completed_at'));
+  final subtaskDeadlines = <String, Deadline>{};
   late String status = field('status', 'active');
   late String unit = field('repeat_unit');
   late bool tracked = field('tracked') == '1';
@@ -758,21 +916,32 @@ class _EditScreenState extends State<EditScreen> {
     super.dispose();
   }
 
-  Future<void> pickDate() async {
-    final selected = await showDatePicker(context: context, firstDate: DateTime(1900),
-      lastDate: DateTime(2100, 12, 31), initialDate: DateTime.tryParse(date) ?? DateTime.now());
-    if (selected != null && mounted) {
-      setState(() => date = selected.toIso8601String().substring(0, 10));
-    }
+  Future<void> editSubtaskDeadline(EditableSubtask subtask) async {
+    final result = await showDialog<ScheduleResult>(
+      context: context,
+      builder: (_) => ScheduleDialog(
+        label: '编辑子任务截止时间',
+        initial: subtaskDeadlines[subtask.id] ?? subtask.deadline,
+      ),
+    );
+    if (!mounted || result == null) return;
+    setState(() {
+      if (result.deadline == subtask.deadline) {
+        subtaskDeadlines.remove(subtask.id);
+      } else {
+        subtaskDeadlines[subtask.id] = result.deadline;
+      }
+    });
   }
 
-  Future<void> pickTime() async {
-    final parts = time.split(':');
-    final selected = await showTimePicker(context: context, initialTime: parts.length == 2 ?
-      TimeOfDay(hour: int.parse(parts[0]), minute: int.parse(parts[1])) : const TimeOfDay(hour: 18, minute: 0));
-    if (selected != null && mounted) {
-      setState(() => time = '${selected.hour.toString().padLeft(2, '0')}:${selected.minute.toString().padLeft(2, '0')}');
-    }
+  Future<void> editCompletion() async {
+    final result = await showDialog<ScheduleResult>(
+      context: context,
+      builder: (_) => ScheduleDialog(
+        label: '编辑完成时间', initial: completion, completion: true,
+      ),
+    );
+    if (mounted && result != null) setState(() => completion = result.deadline);
   }
 
   Future<void> submit() async {
@@ -783,22 +952,26 @@ class _EditScreenState extends State<EditScreen> {
     }
     final step = int.tryParse(interval.text);
     if (!widget.model.course && unit.isNotEmpty &&
-        (date.isEmpty || step == null || step < 1 || step > 365)) {
+        (deadline.date.isEmpty || step == null || step < 1 || step > 365)) {
       setState(() => error = '重复任务需要截止日期，重复间隔为 1–365。');
       return;
     }
     final course = widget.model.course;
     setState(() { busy = true; error = null; });
     try {
-      final saved = await widget.save({
+      final changes = {
         if (!course) ...{
           'title': title.text.trim(), 'detail': body.text, 'category_id': category,
-          'due_date': date, 'due_time': date.isEmpty ? '' : time,
+          'due_date': deadline.date, 'due_time': deadline.time,
           'repeat_unit': unit, 'repeat_interval': interval.text, 'pinned': pinned ? '1' : '',
           if (confirmed) 'repeat_change_confirm': '1',
         },
         'status': status, 'tracked': tracked ? '1' : '',
-      });
+        if (status == 'done' && completion.date.isNotEmpty &&
+            completionStamp(completion) != field('completed_at'))
+          'completed_at': completionStamp(completion),
+      }..removeWhere((key, value) => key != 'repeat_change_confirm' && value == field(key));
+      final saved = await widget.save(changes, Map.of(subtaskDeadlines));
       if (saved && mounted) Navigator.pop(context);
     } catch (e) {
       if (mounted) setState(() => error = readableError(e));
@@ -833,18 +1006,8 @@ class _EditScreenState extends State<EditScreen> {
         else ...[
           select('分类', {'': '未分类', ...widget.model.categories}, category, (v) => category = v),
           const SizedBox(height: 12),
-          Wrap(spacing: 8, runSpacing: 6, children: [
-            OutlinedButton(onPressed: busy ? null : pickDate,
-              child: Text(date.isEmpty ? '选截止日期' : date, style: dateStyle)),
-            OutlinedButton(onPressed: busy || date.isEmpty ? null : pickTime,
-              child: Text(time.isEmpty ? '选截止时间' : time, style: dateStyle)),
-            if (date.isNotEmpty)
-              TextButton(onPressed: busy ? null : () => setState(() { date = ''; time = ''; }),
-                child: const Text('清除截止')),
-            if (time.isNotEmpty)
-              TextButton(onPressed: busy ? null : () => setState(() => time = ''),
-                child: const Text('清除时间')),
-          ]),
+          DeadlineFields(value: deadline,
+            onChanged: busy ? null : (value) => setState(() => deadline = value)),
           const SizedBox(height: 12),
           select('重复', const {'': '不重复', 'day': '按天', 'week': '按周', 'month': '按月'},
             unit, (v) => unit = v),
@@ -861,6 +1024,35 @@ class _EditScreenState extends State<EditScreen> {
           const SizedBox(height: 12),
         ],
         select('状态', statuses, status, (v) => status = v),
+        if (status == 'done')
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('完成时间'),
+            subtitle: Text(completion.date.isEmpty ? '由服务器记录' :
+              '${completion.date} ${completion.time}', style: dateStyle),
+            trailing: const Icon(Icons.edit_outlined),
+            onTap: busy ? null : editCompletion,
+          ),
+        if (widget.model.subtasks.isNotEmpty) ...[
+          const Divider(),
+          const Text('子任务截止时间', style: TextStyle(fontWeight: FontWeight.w900)),
+          if (field('status') == 'done')
+            const Text('先将主任务恢复为未完成，即可修改子任务。'),
+          for (final subtask in widget.model.subtasks.values)
+            Builder(builder: (context) {
+              final due = subtaskDeadlines[subtask.id] ?? subtask.deadline;
+              final editable = !busy && field('status') != 'done';
+              return ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text(subtask.title),
+                subtitle: Text(due.date.isEmpty ? '未设截止' :
+                  [due.date, if (due.time.isNotEmpty) due.time].join(' '), style: dateStyle),
+                trailing: editable ? const Icon(Icons.edit_outlined) : null,
+                onTap: editable ? () => editSubtaskDeadline(subtask) : null,
+              );
+            }),
+          const Divider(),
+        ],
         SwitchListTile(contentPadding: EdgeInsets.zero, title: const Text('追踪'), value: tracked,
           onChanged: busy ? null : (v) => setState(() => tracked = v)),
         if (!course)

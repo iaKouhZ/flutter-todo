@@ -23,7 +23,7 @@ String gate({bool wrong = false}) => '''
  <input type="password" name="password">
 </form>''';
 
-String home(bool admin, {bool detail = false}) => '''
+String home(bool admin, {bool detail = false, String? completedScope}) => '''
 <div class="tl-brand"><span class="tl-brand__name">待办清单</span></div>
 ${admin ? '<form id="bulk-form"></form>' : ''}
 <main class="tl-main__scroll">$row</main>
@@ -31,13 +31,44 @@ ${detail ? '''
 <aside id="detail"><h2 class="tl-detail__title">交作业</h2>
 <p class="tl-detail__body">数学</p>
 ${admin ? '''
+${completedScope != null ? '''
+<form action="/todo/action/" method="post">
+ <input name="_csrf" value="test-token"><input name="op" value="complete">
+ <input name="scope" value="$completedScope"><input name="date" value="2026-11-21">
+ <input name="id" value="7">
+ <input type="datetime-local" name="completed_at" value="2026-11-21T16:08">
+</form>''' : ''}
 <form action="/todo/action/" method="post">
  <input name="_csrf" value="test-token"><input name="op" value="complete">
  <input name="scope" value="occurrence"><input name="date" value="2026-11-21">
  <input name="id" value="7"><input name="done" value="1">
+</form>
+<form action="/todo/action/" method="post">
+ <input name="_csrf" value="test-token"><input name="op" value="subitem_add">
+ <input name="task_id" value="7"><input class="tl-detail__subinput" name="title">
+ <input type="date" name="due_date"><input type="time" name="due_time">
 </form>''' : ''}
 </aside>''' : ''}
 ''';
+
+String editorForm(List<int> ids, {bool done = false}) => '''
+<div class="tl-brand">待办清单</div>
+<form action="/todo/action/" method="post">
+ <input name="_csrf" value="test-token"><input name="op" value="task_save">
+ <input name="id" value="7"><input name="title" value="交作业">
+ <select name="status"><option value="${done ? 'done' : 'active'}" selected></option></select>
+ ${done ? '<input type="datetime-local" name="completed_at" value="2026-11-21T16:08">' : ''}
+ ${ids.indexed.map((entry) {
+   final (index, id) = entry;
+   return '''
+ <input name="subitem_id[$index]" value="$id">
+ <input name="subitem_title[$index]" value="子任务 $id">
+ <input type="date" name="subitem_due_date[$index]" value="2026-11-2$id">
+ <input type="time" name="subitem_due_time[$index]" value="15:00">
+ ${id == 2 ? '<input type="checkbox" name="subitem_done[$index]" value="1" checked>' : ''}
+ ''';
+ }).join()}
+</form>''';
 
 class MemoryDevice extends DeviceStore {
   final settings = <String, String>{};
@@ -70,12 +101,18 @@ void main() {
   late bool public;
   late int credentialVersion;
   late Map<String, String> written;
+  late String? completedScope;
+  late List<int> subtaskIds;
+  late bool editorDone;
 
   setUp(() async {
     password = '旧 口令 +&';
     public = true;
     credentialVersion = 1;
     written = {};
+    completedScope = null;
+    subtaskIds = [1, 2];
+    editorDone = false;
     http = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     http.listen((request) async {
       final response = request.response;
@@ -103,13 +140,16 @@ void main() {
         if (admin && values['_csrf'] == 'test-token') written = values;
         response.write(jsonEncode(admin ? {'ok': true} :
           {'ok': false, 'message': '需要后台登录才能操作。'}));
+      } else if (path == '/todo/admin.php' && admin) {
+        response.write(editorForm(subtaskIds, done: editorDone));
       } else if (path != '/todo/index.php' && !path.startsWith('/todo/tracked/task/')) {
         response.statusCode = 404;
       } else if (!public && !admin) {
         response.redirect(Uri.parse('/todo/login.php'));
         return;
       } else {
-        response.write(home(admin, detail: path.startsWith('/todo/tracked/task/')));
+        response.write(home(admin, detail: path.startsWith('/todo/tracked/task/'),
+          completedScope: completedScope));
       }
       await response.close();
     });
@@ -192,5 +232,74 @@ void main() {
     await session.setServer(client.base.toString());
     expect(session.feed, isNull);
     expect(session.gate, contains('关闭访客访问'));
+  });
+
+  test('new subtask submits its optional deadline in the detail form', () async {
+    await client.login(password);
+    final task = (await client.feed('tracked')).groups.single.tasks.single;
+    await client.change(task, 'subitem_add', extra: {
+      'title': '校对',
+      'due_date': '2026-11-21',
+      'due_time': '14:30',
+    });
+    expect(written, containsPair('op', 'subitem_add'));
+    expect(written, containsPair('task_id', '7'));
+    expect(written, containsPair('due_date', '2026-11-21'));
+    expect(written, containsPair('due_time', '14:30'));
+  });
+
+  test('editing a deadline uses fresh row IDs and preserves untouched subtasks', () async {
+    await client.login(password);
+    final task = (await client.feed('tracked')).groups.single.tasks.single;
+    final form = await client.editor(task);
+    expect(form.subtasks['1']?.deadline, (date: '2026-11-21', time: '15:00'));
+
+    subtaskIds = [2, 1];
+    await client.save(task, {}, subtaskDeadlines: {'1': (date: '', time: '')});
+    expect(written, containsPair('subitem_id[0]', '2'));
+    expect(written, containsPair('subitem_due_date[0]', '2026-11-22'));
+    expect(written, containsPair('subitem_due_time[0]', '15:00'));
+    expect(written, containsPair('subitem_done[0]', '1'));
+    expect(written, containsPair('subitem_id[1]', '1'));
+    expect(written, containsPair('subitem_title[1]', '子任务 1'));
+    expect(written, containsPair('subitem_due_date[1]', ''));
+    expect(written, containsPair('subitem_due_time[1]', ''));
+
+    subtaskIds = [2];
+    written = {};
+    await expectLater(client.save(task, {}, subtaskDeadlines: {'1': (date: '', time: '')}),
+      throwsA(isA<TodoError>()));
+    expect(written, isEmpty);
+  });
+
+  test('completion uses the single occurrence or whole-task form as shown', () async {
+    await client.login(password);
+    final task = (await client.feed('tracked')).groups.single.tasks.single;
+    for (final scope in ['occurrence', 'task']) {
+      completedScope = scope;
+      expect((await client.detail(task)).completedAt, '2026-11-21T16:08');
+      await client.change(task, 'complete', extra: {
+        'completed_at': '2026-11-21T16:45', 'scope': scope, 'date': '2026-11-21',
+      });
+      expect(written, containsPair('scope', scope));
+      expect(written, containsPair('date', '2026-11-21'));
+      expect(written, containsPair('completed_at', '2026-11-21T16:45'));
+      expect(written, containsPair('done', '1'));
+    }
+    written = {};
+    await expectLater(client.change(task, 'complete', extra: {
+      'completed_at': '2026-11-21T16:45', 'scope': 'occurrence',
+    }), throwsA(isA<TodoError>()));
+    expect(written, isEmpty);
+  });
+
+  test('ordinary task edits preserve completion and explicit edits override it', () async {
+    await client.login(password);
+    final task = (await client.feed('tracked')).groups.single.tasks.single;
+    editorDone = true;
+    await client.save(task, {'title': '另一项'});
+    expect(written.containsKey('completed_at'), isFalse);
+    await client.save(task, {'completed_at': '2026-11-21T16:45'});
+    expect(written, containsPair('completed_at', '2026-11-21T16:45'));
   });
 }
