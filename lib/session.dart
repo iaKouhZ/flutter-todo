@@ -20,7 +20,9 @@ class DeviceStore {
 }
 
 class Session extends ChangeNotifier {
-  final _device = DeviceStore();
+  Session({DeviceStore? device}) : _device = device ?? DeviceStore();
+
+  final DeviceStore _device;
   TodoServer? server;
   Feed? feed;
   String tab = 'tracked';
@@ -207,8 +209,6 @@ class Session extends ChangeNotifier {
       }
     }
   }
-
-  Future<TaskDetail> detail(Task task) => authorized(() => server!.detail(task));
 
   Future<void> didWrite() async {
     _scheduleWidget();

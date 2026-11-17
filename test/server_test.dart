@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:todo_endfield/server.dart';
+import 'package:todo_endfield/session.dart';
 
 const row = '''
 <div class="tl-section-head__name">学习</div>
@@ -37,6 +38,30 @@ ${admin ? '''
 </form>''' : ''}
 </aside>''' : ''}
 ''';
+
+class MemoryDevice extends DeviceStore {
+  final settings = <String, String>{};
+
+  @override
+  Future<Map<String, String>> read() async => Map.of(settings);
+
+  @override
+  Future<void> server(String url) async {
+    settings['url'] = url;
+  }
+
+  @override
+  Future<void> password(String? password) async {
+    if (password == null) {
+      settings.remove('password');
+    } else {
+      settings['password'] = password;
+    }
+  }
+
+  @override
+  Future<void> refreshWidget() async {}
+}
 
 void main() {
   late HttpServer http;
@@ -130,5 +155,42 @@ void main() {
     await expectLater(client.login(oldPassword), throwsA(isA<PasswordRejected>()));
     await client.login(password);
     expect((await client.feed('all')).admin, isTrue);
+  });
+
+  test('first launch persists the server, restores the password and explains rotation', () async {
+    final device = MemoryDevice();
+    final fresh = Session(device: device);
+    addTearDown(fresh.dispose);
+    await fresh.initialize();
+    expect(fresh.server, isNull);
+    await fresh.setServer(client.base.toString());
+    expect(device.settings['url'], client.base.toString());
+    expect(fresh.feed?.admin, isFalse);
+    await fresh.signIn(password);
+    expect(device.settings['password'], password);
+
+    final restored = Session(device: device);
+    addTearDown(restored.dispose);
+    await restored.initialize();
+    expect(restored.feed?.admin, isTrue);
+
+    password = '新密码';
+    credentialVersion++;
+    await restored.refresh();
+    expect(restored.feed, isNull);
+    expect(restored.gate, contains('密码已失效'));
+    expect(device.settings.containsKey('password'), isFalse);
+    await restored.signIn(password);
+    expect(restored.feed?.admin, isTrue);
+  });
+
+  test('a private server asks for a password immediately after setup', () async {
+    final session = Session(device: MemoryDevice());
+    addTearDown(session.dispose);
+    public = false;
+    await session.initialize();
+    await session.setServer(client.base.toString());
+    expect(session.feed, isNull);
+    expect(session.gate, contains('关闭访客访问'));
   });
 }

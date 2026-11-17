@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:ui' show FontFeature;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -66,6 +65,7 @@ class Workspace extends StatefulWidget {
 
 class _WorkspaceState extends State<Workspace> with WidgetsBindingObserver {
   final session = Session();
+  bool passwordPromptOpen = false;
 
   @override
   void initState() {
@@ -77,8 +77,17 @@ class _WorkspaceState extends State<Workspace> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed && session.initialized &&
-        session.feed != null && !session.arrangingServer) {
-      unawaited(session.refresh());
+        session.feed != null && !session.arrangingServer && !passwordPromptOpen) {
+      unawaited(refreshOnResume());
+    }
+  }
+
+  Future<void> refreshOnResume() async {
+    await session.refresh();
+    if (!mounted || session.gate == null || !Navigator.of(context).canPop()) return;
+    final signedIn = await askPassword(session.gate!);
+    if (!signedIn && mounted && !passwordPromptOpen && session.gate != null) {
+      Navigator.of(context).popUntil((route) => route.isFirst);
     }
   }
 
@@ -95,11 +104,17 @@ class _WorkspaceState extends State<Workspace> with WidgetsBindingObserver {
   }
 
   Future<bool> askPassword(String reason) async {
-    return await showDialog<bool>(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => PasswordDialog(session: session, reason: reason),
-    ) ?? false;
+    if (passwordPromptOpen) return false;
+    passwordPromptOpen = true;
+    try {
+      return await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => PasswordDialog(session: session, reason: reason),
+      ) ?? false;
+    } finally {
+      passwordPromptOpen = false;
+    }
   }
 
   Future<bool> allowWrite() async {
