@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="deadline_widget_surface">#1E201D</color>
+    <color name="deadline_widget_text">#F2F2EC</color>
+    <color name="deadline_widget_secondary_text">#BDBEB5</color>
+</resources>
