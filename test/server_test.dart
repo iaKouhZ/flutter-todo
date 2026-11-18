@@ -432,7 +432,8 @@ void main() {
       '1天2小时后 · 1月2日 01:00'];
     final fixture = '<main class="tl-main__scroll">'
       '<span class="tl-fold__name">未设截止日与远期</span>'
-      '${labels.map((label) => row.replaceFirst('11/21 14:00', label)).join()}'
+      '${labels.map((label) => row.replaceFirst('11/21 14:00', label)
+          .replaceFirst('<div class="tl-section-head__name">学习</div>', '')).join()}'
       '</main>';
     final feed = Feed(parse(fixture));
     expect(feed.groups.single.label, '未设截止日与远期');

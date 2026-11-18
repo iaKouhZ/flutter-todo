@@ -40,7 +40,8 @@ jobs:
         run: bash platform/prepare-android.sh
       - run: flutter pub get
       - run: flutter analyze
-      - run: flutter test
+      - name: Verify server protocol and client behavior
+        run: flutter test
       - name: Build Android APK
         run: flutter build apk --release --build-number "$((GITHUB_RUN_NUMBER + 1))"
       - name: Test Android widget

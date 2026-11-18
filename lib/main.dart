@@ -442,11 +442,14 @@ class TaskTile extends StatelessWidget {
                             padding: EdgeInsets.only(right: 5),
                             child: Icon(Icons.subdirectory_arrow_right, size: 15),
                           ),
-                          Expanded(child: Text(subtask.title)),
+                          Expanded(flex: 3, child: Text(subtask.title)),
                           const SizedBox(width: 8),
-                          Text(subtask.deadline, style: dateStyle.copyWith(
-                            fontSize: 12,
-                            color: Theme.of(context).colorScheme.onSurfaceVariant,
+                          Flexible(flex: 2, child: Text(subtask.deadline,
+                            textAlign: TextAlign.end,
+                            style: dateStyle.copyWith(
+                              fontSize: 12,
+                              color: Theme.of(context).colorScheme.onSurfaceVariant,
+                            ),
                           )),
                         ],
                       ),
@@ -769,7 +772,7 @@ class _DetailScreenState extends State<DetailScreen> {
     final pinned = active('pin', 'pinned');
     final isGuestDetail = detail.form('complete') == null;
     final canAddSubtask = detail.editableSubtasks ||
-      (isGuestDetail && task.repeat.isEmpty && !task.done);
+      (isGuestDetail && !task.done);
     return Scaffold(
       appBar: AppBar(title: const Text('任务详情'), actions: [
         IconButton(tooltip: '编辑', onPressed: busy ? null : () => run(() async {
