@@ -61,7 +61,7 @@ public static class LedgerTlsPolicyTests {
             rootRequest.CertificateExtensions.Add(new X509KeyUsageExtension(
                 X509KeyUsageFlags.KeyCertSign | X509KeyUsageFlags.CrlSign, true));
             using (var root = rootRequest.CreateSelfSigned(now.AddDays(-3), now.AddDays(3)))
-            using (var publicRoot = new X509Certificate2(root.Export(X509ContentType.Cert)))
+            using (var publicRoot = X509CertificateLoader.LoadCertificate(root.Export(X509ContentType.Cert)))
             using (var store = new X509Store(StoreName.Root, StoreLocation.CurrentUser)) {
                 store.Open(OpenFlags.ReadWrite);
                 var installed = false;
