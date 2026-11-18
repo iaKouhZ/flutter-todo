@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -14,7 +15,28 @@ const raised = Color(0xfff2f2ec);
 const signal = Color(0xfffff500);
 const dateStyle = TextStyle(fontFeatures: [FontFeature.tabularFigures()]);
 
-void main() => runApp(const LedgerApp());
+Future<void> main(List<String> arguments) async {
+  if (arguments.length == 3 && arguments.first == '--check-server') {
+    final server = TodoServer(serverAddress(arguments[1]));
+    var ok = false;
+    var message = '';
+    try {
+      final feed = await server.feed('tracked');
+      ok = true;
+      message = feed.name;
+    } on LoginRequired {
+      ok = true;
+      message = '服务器要求登录';
+    } catch (error) {
+      message = '${error.runtimeType}: ${readableError(error)}';
+    } finally {
+      server.close();
+    }
+    await File(arguments[2]).writeAsString(jsonEncode({'ok': ok, 'message': message}));
+    exit(ok ? 0 : 1);
+  }
+  runApp(const LedgerApp());
+}
 
 class LedgerApp extends StatelessWidget {
   const LedgerApp({super.key});

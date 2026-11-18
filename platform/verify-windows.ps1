@@ -52,6 +52,17 @@ Confirm-LedgerIcon "$installDir/todo_endfield.exe"
 Confirm-LedgerIcon $installer
 
 
+$probeResult = Join-Path $env:RUNNER_TEMP "todo-connectivity-$TargetArch.json"
+$probe = Start-Process -FilePath "$installDir/todo_endfield.exe" -ArgumentList @(
+    '--check-server', 'https://todo.v2t.top', $probeResult
+) -WorkingDirectory $env:RUNNER_TEMP -PassThru -Wait
+if (-not (Test-Path $probeResult)) { throw "The installed app produced no connection diagnostic (exit $($probe.ExitCode))." }
+$diagnostic = Get-Content -Raw -LiteralPath $probeResult | ConvertFrom-Json
+Write-Output "Installed release connection result: $($diagnostic.message)"
+if ($probe.ExitCode -ne 0 -or -not $diagnostic.ok) {
+    throw "Installed release connection failed: $($diagnostic.message)"
+}
+
 $running = Start-Process -FilePath "$installDir/todo_endfield.exe" -WorkingDirectory $env:RUNNER_TEMP -PassThru
 try {
     Start-Sleep -Seconds 8
