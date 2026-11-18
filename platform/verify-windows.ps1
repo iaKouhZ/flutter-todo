@@ -87,6 +87,8 @@ try {
     if (-not $running.HasExited) { Stop-Process -Id $running.Id -Force }
 }
 
+./platform/test-windows-placement.ps1 -Executable "$installDir/todo_endfield.exe"
+
 $uninstall = Start-Process -FilePath "$installDir/unins000.exe" -ArgumentList @(
     '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART'
 ) -PassThru -Wait

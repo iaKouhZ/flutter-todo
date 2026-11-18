@@ -95,7 +95,7 @@ bool FlutterWindow::OnCreate() {
       });
 
   flutter_controller_->engine()->SetNextFrameCallback([&]() {
-    this->Show();
+    if (!settings_ || !settings_->RestoreWindowPlacement(GetHandle())) this->Show();
   });
 
   // Flutter can complete the first frame before the "show window" callback is
@@ -120,6 +120,22 @@ LRESULT
 FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
                               WPARAM const wparam,
                               LPARAM const lparam) noexcept {
+  // Save only on an actual close or confirmed session end, while HWND is valid.
+  // A canceled shutdown must not mark the placement as saved.
+  switch (message) {
+    case WM_SIZE:
+      if (wparam != SIZE_MINIMIZED) maximized_before_minimize_ = wparam == SIZE_MAXIMIZED;
+      break;
+    case WM_CLOSE:
+      SaveWindowPlacementOnce();
+      break;
+    case WM_QUERYENDSESSION:
+      return TRUE;
+    case WM_ENDSESSION:
+      if (wparam) SaveWindowPlacementOnce();
+      return 0;
+  }
+
   // Give Flutter, including plugins, an opportunity to handle window messages.
   if (flutter_controller_) {
     std::optional<LRESULT> result =
@@ -137,4 +153,15 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
   }
 
   return Win32Window::MessageHandler(hwnd, message, wparam, lparam);
+}
+
+void FlutterWindow::SaveWindowPlacementOnce() noexcept {
+  if (placement_saved_ || !settings_) return;
+  try {
+    settings_->SaveWindowPlacement(GetHandle(), maximized_before_minimize_);
+    placement_saved_ = true;
+  } catch (const std::exception& error) {
+    // Persistence failure must not block a normal close or Windows shutdown.
+    OutputDebugStringA(error.what());
+  }
 }

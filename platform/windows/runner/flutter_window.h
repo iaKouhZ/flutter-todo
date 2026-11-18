@@ -26,6 +26,9 @@ class FlutterWindow : public Win32Window {
                          LPARAM const lparam) noexcept override;
 
  private:
+  void SaveWindowPlacementOnce() noexcept;
+  bool placement_saved_ = false;
+  bool maximized_before_minimize_ = false;
   std::unique_ptr<DeviceSettings> settings_;
   std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>> device_channel_;
 

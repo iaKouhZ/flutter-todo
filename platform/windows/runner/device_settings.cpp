@@ -220,3 +220,57 @@ void DeviceSettings::SetStartup(bool enabled) {
     throw std::runtime_error("Cannot install the startup shortcut.");
   }
 }
+
+bool DeviceSettings::RestoreWindowPlacement(HWND window) const {
+  std::ifstream stream(file_.parent_path() / L"window.dat", std::ios::binary);
+  char magic[4]{};
+  DWORD show = 0;
+  RECT normal{};
+  stream.read(magic, sizeof(magic));
+  stream.read(reinterpret_cast<char*>(&show), sizeof(show));
+  stream.read(reinterpret_cast<char*>(&normal), sizeof(normal));
+  if (!stream || std::string(magic, sizeof(magic)) != "TWP1" ||
+      (show != SW_SHOWNORMAL && show != SW_SHOWMAXIMIZED) ||
+      static_cast<long long>(normal.right) - normal.left <= 0 ||
+      static_cast<long long>(normal.bottom) - normal.top <= 0 ||
+      static_cast<long long>(normal.right) - normal.left > 100000 ||
+      static_cast<long long>(normal.bottom) - normal.top > 100000) return false;
+  WINDOWPLACEMENT placement{};
+  placement.length = sizeof(placement);
+  placement.showCmd = show;
+  placement.ptMinPosition = {-1, -1};
+  placement.ptMaxPosition = {-1, -1};
+  placement.rcNormalPosition = normal;
+  // Keep workspace coordinates paired with SetWindowPlacement. Windows adjusts
+  // fully off-screen positions if the monitor configuration has changed.
+  return SetWindowPlacement(window, &placement) != FALSE;
+}
+
+void DeviceSettings::SaveWindowPlacement(HWND window, bool minimized_from_maximized) const {
+  WINDOWPLACEMENT placement{};
+  placement.length = sizeof(placement);
+  if (!GetWindowPlacement(window, &placement)) {
+    throw std::runtime_error("Cannot read the window placement.");
+  }
+  const bool maximized = placement.showCmd == SW_SHOWMAXIMIZED ||
+      (IsIconic(window) && minimized_from_maximized);
+  const DWORD show = maximized ? SW_SHOWMAXIMIZED : SW_SHOWNORMAL;
+  std::filesystem::create_directories(file_.parent_path());
+  const auto target = file_.parent_path() / L"window.dat";
+  auto temporary = target;
+  temporary += L".tmp";
+  {
+    std::ofstream stream(temporary, std::ios::binary | std::ios::trunc);
+    stream.write("TWP1", 4);
+    stream.write(reinterpret_cast<const char*>(&show), sizeof(show));
+    stream.write(reinterpret_cast<const char*>(&placement.rcNormalPosition),
+                 sizeof(placement.rcNormalPosition));
+    stream.flush();
+    if (!stream) throw std::runtime_error("Cannot save the window placement.");
+  }
+  if (!MoveFileExW(temporary.c_str(), target.c_str(),
+                   MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+    std::filesystem::remove(temporary);
+    throw std::runtime_error("Cannot replace the window placement file.");
+  }
+}

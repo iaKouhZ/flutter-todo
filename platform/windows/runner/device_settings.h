@@ -19,6 +19,8 @@ class DeviceSettings {
   void SetTopmost(HWND window, bool enabled);
   bool StartupEnabled() const;
   void SetStartup(bool enabled);
+  bool RestoreWindowPlacement(HWND window) const;
+  void SaveWindowPlacement(HWND window, bool minimized_from_maximized = false) const;
   static std::filesystem::path Executable();
 
  private:

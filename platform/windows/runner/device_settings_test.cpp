@@ -23,7 +23,7 @@ int main() {
       (L"todo-native-test-" + std::to_wstring(GetCurrentProcessId()));
   const auto profile = root / L"profile";
   const auto startup = root / L"startup";
-  const HWND window = CreateWindowExW(0, L"STATIC", L"Todo native test", WS_OVERLAPPED,
+  const HWND window = CreateWindowExW(0, L"STATIC", L"Todo native test", WS_OVERLAPPEDWINDOW,
                                       0, 0, 200, 100, nullptr, nullptr,
                                       GetModuleHandleW(nullptr), nullptr);
   try {
@@ -57,6 +57,41 @@ int main() {
     settings.SetPassword("another");
     settings.SetPassword("");
     Require(DeviceSettings(profile, startup).password().empty(), "logout clears password");
+    Require(!settings.RestoreWindowPlacement(window), "first launch has no placement");
+    SetWindowPos(window, nullptr, 80, 90, 640, 480, SWP_NOZORDER | SWP_NOACTIVATE);
+    WINDOWPLACEMENT before{};
+    before.length = sizeof(before);
+    Require(GetWindowPlacement(window, &before) != FALSE, "read normal placement");
+    settings.SaveWindowPlacement(window);
+    SetWindowPos(window, nullptr, 150, 160, 800, 600, SWP_NOZORDER | SWP_NOACTIVATE);
+    Require(DeviceSettings(profile, startup).RestoreWindowPlacement(window), "restore normal placement");
+    WINDOWPLACEMENT after{};
+    after.length = sizeof(after);
+    GetWindowPlacement(window, &after);
+    Require(EqualRect(&before.rcNormalPosition, &after.rcNormalPosition) != FALSE,
+            "normal position and size preserved");
+    ShowWindow(window, SW_MAXIMIZE);
+    settings.SaveWindowPlacement(window);
+    ShowWindow(window, SW_RESTORE);
+    Require(settings.RestoreWindowPlacement(window) && IsZoomed(window),
+            "maximized state restored");
+    ShowWindow(window, SW_MINIMIZE);
+    settings.SaveWindowPlacement(window, true);
+    ShowWindow(window, SW_RESTORE);
+    Require(settings.RestoreWindowPlacement(window) && IsZoomed(window) && !IsIconic(window),
+            "minimized maximized window restores maximized");
+    ShowWindow(window, SW_RESTORE);
+    ShowWindow(window, SW_MINIMIZE);
+    settings.SaveWindowPlacement(window);
+    Require(settings.RestoreWindowPlacement(window) && !IsIconic(window) && !IsZoomed(window),
+            "minimized normal window restores normal");
+    {
+      std::ofstream invalid(profile / L"window.dat", std::ios::binary | std::ios::trunc);
+      invalid << "broken";
+    }
+    Require(!settings.RestoreWindowPlacement(window), "invalid placement falls back safely");
+    Require(DeviceSettings(profile, startup).url() == settings.url(),
+            "placement does not change existing settings");
     DestroyWindow(window);
     std::filesystem::remove_all(root);
     CoUninitialize();
