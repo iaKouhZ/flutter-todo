@@ -16,8 +16,11 @@ const signal = Color(0xfffff500);
 const dateStyle = TextStyle(fontFeatures: [FontFeature.tabularFigures()]);
 
 Future<void> main(List<String> arguments) async {
-  if (arguments.length == 3 && arguments.first == '--check-server') {
-    final server = TodoServer(serverAddress(arguments[1]));
+  if (arguments.length == 3 &&
+      ['--check-server', '--check-server-windows-trust'].contains(arguments.first)) {
+    final server = TodoServer(serverAddress(arguments[1]),
+      windowsContext: arguments.first == '--check-server-windows-trust'
+          ? SecurityContext() : null);
     var ok = false;
     var message = '';
     try {

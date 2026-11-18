@@ -49,3 +49,12 @@ target_link_libraries(ledger_native_test PRIVATE "crypt32.lib" "shell32.lib" "ol
 # Treat all Windows runner source strings as UTF-8.
 target_compile_options(${BINARY_NAME} PRIVATE /utf-8)
 target_compile_options(ledger_native_test PRIVATE /utf-8)
+
+# Native Windows SSL chain validation; the app uses it only after Dart rejects
+# a chain. Ship alongside the runner, including on native ARM64.
+add_executable(ledger_tls WIN32 "tls_verifier.cpp")
+apply_standard_settings(ledger_tls)
+target_compile_definitions(ledger_tls PRIVATE "NOMINMAX" "UNICODE" "_UNICODE")
+target_compile_options(ledger_tls PRIVATE /utf-8)
+target_link_libraries(ledger_tls PRIVATE "crypt32.lib" "shell32.lib")
+add_dependencies(${BINARY_NAME} ledger_tls)

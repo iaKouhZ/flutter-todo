@@ -53,18 +53,25 @@ Confirm-LedgerIcon "$installDir/todo_endfield.exe"
 Confirm-LedgerIcon $installer
 
 
+if (-not (Test-Path "$installDir/ledger_tls.exe")) {
+    throw 'Installed Windows certificate verifier is missing.'
+}
+./platform/test-windows-tls.ps1 -Verifier "$installDir/ledger_tls.exe"
 if ($ServerUrl) {
-    $probeResult = Join-Path $env:RUNNER_TEMP "todo-connectivity-$TargetArch.json"
-    $probe = Start-Process -FilePath "$installDir/todo_endfield.exe" -ArgumentList @(
-        '--check-server', $ServerUrl, $probeResult
-    ) -WorkingDirectory $env:RUNNER_TEMP -PassThru -Wait
-    if (-not (Test-Path $probeResult)) { throw "The installed app produced no connection diagnostic (exit $($probe.ExitCode))." }
-    $diagnostic = Get-Content -Raw -LiteralPath $probeResult | ConvertFrom-Json
-    Write-Output "Installed release connection result: $($diagnostic.message)"
-    if ($probe.ExitCode -ne 0 -or -not $diagnostic.ok) {
-        throw "Installed release connection failed: $($diagnostic.message)"
+    foreach ($mode in @('--check-server', '--check-server-windows-trust')) {
+        $probeResult = Join-Path $env:RUNNER_TEMP "todo-connectivity-$TargetArch-$mode.json"
+        $probe = Start-Process -FilePath "$installDir/todo_endfield.exe" -ArgumentList @(
+            $mode, $ServerUrl, $probeResult
+        ) -WorkingDirectory $env:RUNNER_TEMP -PassThru -Wait
+        if (-not (Test-Path $probeResult)) {
+            throw "The installed app produced no connection diagnostic (exit $($probe.ExitCode))."
+        }
+        $diagnostic = Get-Content -Raw -LiteralPath $probeResult | ConvertFrom-Json
+        Write-Output "Installed release $mode connection result: $($diagnostic.message)"
+        if ($probe.ExitCode -ne 0 -or -not $diagnostic.ok) {
+            throw "Installed release $mode connection failed: $($diagnostic.message)"
+        }
     }
-    
 }
 
 $running = Start-Process -FilePath "$installDir/todo_endfield.exe" -WorkingDirectory $env:RUNNER_TEMP -PassThru
@@ -86,4 +93,5 @@ if ($uninstall.ExitCode -ne 0) { throw "Uninstaller failed: $($uninstall.ExitCod
 Start-Sleep -Seconds 2
 if (Test-Path "$installDir/todo_endfield.exe") { throw 'The installed app was not removed.' }
 if (Test-Path $uninstallKey) { throw 'Uninstall left its registration data behind.' }
+if (Test-Path "$installDir/ledger_tls.exe") { throw 'The certificate verifier was not uninstalled.' }
 Write-Output "$TargetArch native, icons, Unicode title, installation and uninstall cleanup checks passed."

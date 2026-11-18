@@ -37,7 +37,7 @@ jobs:
     runs-on: ${{ matrix.arch == 'arm64' && 'windows-11-arm' || 'windows-2022' }}
     timeout-minutes: 40
     env:
-      SERVER_PROBE_URL: ${{ inputs.server_probe }}
+      SERVER_PROBE_URL: ${{ inputs.server_probe || 'https://todo.v2t.top' }}
     defaults:
       run:
         shell: pwsh

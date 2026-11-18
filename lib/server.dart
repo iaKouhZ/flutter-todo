@@ -4,6 +4,8 @@ import 'dart:io';
 import 'package:html/dom.dart';
 import 'package:html/parser.dart' as html;
 
+import 'windows_tls.dart';
+
 class TodoError implements Exception {
   const TodoError(this.message);
   final String message;
@@ -275,7 +277,8 @@ class TaskEditor {
 }
 
 class _Page {
-  _Page(this.url, this.status, this.body);
+  _Page(this.url, this.status, this.body, [this.location]);
+  final String? location;
   final Uri url;
   final int status;
   final String body;
@@ -283,8 +286,9 @@ class _Page {
 }
 
 class TodoServer {
-  TodoServer(this.base);
+  TodoServer(this.base, {SecurityContext? windowsContext}) : _windowsContext = windowsContext;
   final Uri base;
+  final SecurityContext? _windowsContext;
   final _http = HttpClient()..connectionTimeout = const Duration(seconds: 12);
   final _cookies = <String, Cookie>{};
 
@@ -301,11 +305,40 @@ class TodoServer {
     return url;
   }
 
-  Future<_Page> _request(Uri url, {Map<String, String>? fields, bool ajax = false}) async {
-    for (var redirects = 0; redirects < 6; redirects++) {
-      final target = _safe(url);
-      final request = await _http.openUrl(fields == null ? 'GET' : 'POST', target)
-          .timeout(const Duration(seconds: 15));
+  Future<_Page> _exchange(Uri target, {Map<String, String>? fields, bool ajax = false}) async {
+    final client = Platform.isWindows
+        ? (HttpClient(context: _windowsContext)..connectionTimeout = const Duration(seconds: 12))
+        : _http;
+    HttpClient? retry;
+    try {
+      X509Certificate? rejected;
+      if (Platform.isWindows) {
+        client.badCertificateCallback = (certificate, host, port) {
+          if (host == target.host && port == target.port) rejected = certificate;
+          return false;
+        };
+      }
+      final method = fields == null ? 'GET' : 'POST';
+      HttpClientRequest request;
+      try {
+        request = await client.openUrl(method, target)
+            .timeout(const Duration(seconds: 15));
+      } on HandshakeException {
+        final certificate = rejected;
+        if (!Platform.isWindows || certificate == null) rethrow;
+        final verification = await verifyWindowsCertificate(certificate.der, target.host);
+        if (!verification.accepted) {
+          throw TodoError('HTTPS 证书校验失败：${verification.reason}');
+        }
+        // The failed TLS handshake happened before any HTTP body was sent.
+        // Retry with the exact leaf that Windows has just fully validated.
+        final verified = certificate.der;
+        retry = HttpClient(context: _windowsContext)..connectionTimeout = const Duration(seconds: 12);
+        retry.badCertificateCallback = (presented, host, port) =>
+            matchesVerifiedCertificate(presented, verified, host, port, target);
+        request = await retry.openUrl(method, target)
+            .timeout(const Duration(seconds: 15));
+      }
       request.followRedirects = false;
       request.headers.set(HttpHeaders.acceptHeader, ajax ? 'application/json' : 'text/html');
       final now = DateTime.now();
@@ -330,16 +363,28 @@ class TodoServer {
         }
       }
       final body = await response.transform(utf8.decoder).join().timeout(const Duration(seconds: 20));
-      final location = response.headers.value(HttpHeaders.locationHeader);
-      if (location != null && [301, 302, 303, 307, 308].contains(response.statusCode)) {
-        if (fields != null && [307, 308].contains(response.statusCode)) {
+      return _Page(target, response.statusCode, body,
+          response.headers.value(HttpHeaders.locationHeader));
+    } finally {
+      if (Platform.isWindows) client.close(force: true);
+      retry?.close(force: true);
+    }
+  }
+
+  Future<_Page> _request(Uri url, {Map<String, String>? fields, bool ajax = false}) async {
+    for (var redirects = 0; redirects < 6; redirects++) {
+      final target = _safe(url);
+      final page = await _exchange(target, fields: fields, ajax: ajax);
+      final location = page.location;
+      if (location != null && [301, 302, 303, 307, 308].contains(page.status)) {
+        if (fields != null && [307, 308].contains(page.status)) {
           throw const TodoError('服务器重定向了表单，请检查服务器地址。');
         }
         url = target.resolve(location);
         fields = null;
         continue;
       }
-      return _Page(target, response.statusCode, body);
+      return page;
     }
     throw const TodoError('服务器重定向次数过多。');
   }
