@@ -86,7 +86,7 @@ class WidgetFeedTest {
     @Test
     fun keepsAllRowsForScrollingAndGroupsEveryChildBelowItsParent() {
         val children = (1..12).reversed().joinToString("") {
-            child("子任务 $it", "T+$it · 1月$it日")
+            child("子任务 $it", "T+$it · 1月${it}日")
         }
         val parent = row(1, "2027-01-18", "长期任务", children, tracked = true)
         val others = (2..15).map { row(it, "2027-02-01", "任务 $it") }
