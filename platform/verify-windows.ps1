@@ -56,7 +56,8 @@ Confirm-LedgerIcon $installer
 if (-not (Test-Path "$installDir/ledger_tls.exe")) {
     throw 'Installed Windows certificate verifier is missing.'
 }
-./platform/test-windows-tls.ps1 -Verifier "$installDir/ledger_tls.exe"
+if (Test-Path "$installDir/ledger_tls_policy_test.exe") { throw 'CI-only TLS verifier was installed.' }
+./platform/test-windows-tls.ps1 -Verifier "$release/ledger_tls_policy_test.exe"
 if ($ServerUrl) {
     foreach ($mode in @('--check-server', '--check-server-windows-trust')) {
         $probeResult = Join-Path $env:RUNNER_TEMP "todo-connectivity-$TargetArch-$mode.json"

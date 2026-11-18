@@ -58,3 +58,11 @@ target_compile_definitions(ledger_tls PRIVATE "NOMINMAX" "UNICODE" "_UNICODE")
 target_compile_options(ledger_tls PRIVATE /utf-8)
 target_link_libraries(ledger_tls PRIVATE "crypt32.lib" "shell32.lib")
 add_dependencies(${BINARY_NAME} ledger_tls)
+
+# The CI variant uses an exclusive in-memory CA and is excluded from installers.
+add_executable(ledger_tls_policy_test WIN32 "tls_verifier.cpp")
+apply_standard_settings(ledger_tls_policy_test)
+target_compile_definitions(ledger_tls_policy_test PRIVATE "NOMINMAX" "UNICODE" "_UNICODE" "LEDGER_TLS_POLICY_TEST")
+target_compile_options(ledger_tls_policy_test PRIVATE /utf-8)
+target_link_libraries(ledger_tls_policy_test PRIVATE "crypt32.lib" "shell32.lib")
+add_dependencies(${BINARY_NAME} ledger_tls_policy_test)

@@ -28,7 +28,7 @@ Future<WindowsCertificateResult> verifyWindowsCertificate(
     final message = (await output).trim();
     await errors;
     return WindowsCertificateResult(code == 0,
-      message.isEmpty ? 'Windows 无法验证此证书（代码 $code）。' : message);
+      message.isEmpty ? (code == 0 ? 'Windows 证书链验证通过。' : 'Windows 无法验证此证书（代码 $code）。') : message);
   } on TimeoutException {
     process?.kill();
     return const WindowsCertificateResult(false, 'Windows 证书链验证超时，请检查网络和系统证书更新。');

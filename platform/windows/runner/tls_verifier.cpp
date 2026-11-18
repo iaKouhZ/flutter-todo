@@ -1,3 +1,4 @@
+#define CERT_CHAIN_ENGINE_CONFIG_HAS_EXTRA_FIELDS
 #define CERT_CHAIN_PARA_HAS_EXTRA_FIELDS
 #include <windows.h>
 #include <wincrypt.h>
@@ -9,6 +10,17 @@
 #include <vector>
 
 namespace {
+#ifdef LEDGER_TLS_POLICY_TEST
+struct TestChainEngine {
+  HCERTSTORE roots = nullptr;
+  HCERTCHAINENGINE engine = nullptr;
+  ~TestChainEngine() {
+    if (engine) CertFreeCertificateChainEngine(engine);
+    if (roots) CertCloseStore(roots, 0);
+  }
+};
+#endif
+
 int Fail(DWORD error) {
   char text[96]{};
   const int size = sprintf_s(text, "Windows SSL chain policy failed: 0x%08lX", error);
@@ -24,12 +36,45 @@ int Fail(DWORD error) {
 int APIENTRY wWinMain(HINSTANCE, HINSTANCE, wchar_t*, int) {
   int count = 0;
   auto arguments = CommandLineToArgvW(GetCommandLineW(), &count);
-  if (!arguments || count != 2 || arguments[1][0] == L'\0') {
+  #ifdef LEDGER_TLS_POLICY_TEST
+  const int expected_arguments = 3;
+#else
+  const int expected_arguments = 2;
+#endif
+  if (!arguments || count != expected_arguments || arguments[1][0] == L'\0') {
     if (arguments) LocalFree(arguments);
     return Fail(ERROR_INVALID_PARAMETER);
   }
   std::wstring hostname(arguments[1]);
+#ifdef LEDGER_TLS_POLICY_TEST
+  const std::wstring test_root(arguments[2]);
+#endif
   LocalFree(arguments);
+
+  HCERTCHAINENGINE engine = nullptr;
+#ifdef LEDGER_TLS_POLICY_TEST
+  // Only the excluded CI test binary accepts a temporary root, in memory.
+  // The production helper has no custom-root mode or certificate-store writes.
+  TestChainEngine test;
+  DWORD size = 0;
+  if (!CryptStringToBinaryW(test_root.c_str(), 0, CRYPT_STRING_BASE64,
+                            nullptr, &size, nullptr, nullptr)) return Fail(GetLastError());
+  std::vector<BYTE> root_bytes(size);
+  if (!CryptStringToBinaryW(test_root.c_str(), 0, CRYPT_STRING_BASE64,
+                            root_bytes.data(), &size, nullptr, nullptr)) return Fail(GetLastError());
+  test.roots = CertOpenStore(CERT_STORE_PROV_MEMORY, 0, 0, CERT_STORE_CREATE_NEW_FLAG, nullptr);
+  if (!test.roots) return Fail(GetLastError());
+  if (!CertAddEncodedCertificateToStore(test.roots, X509_ASN_ENCODING,
+      root_bytes.data(), size, CERT_STORE_ADD_ALWAYS, nullptr)) return Fail(GetLastError());
+  CERT_CHAIN_ENGINE_CONFIG config{};
+  config.cbSize = sizeof(config);
+  config.hExclusiveRoot = test.roots;
+  config.dwFlags = CERT_CHAIN_CACHE_ONLY_URL_RETRIEVAL |
+      CERT_CHAIN_DISABLE_AIA | CERT_CHAIN_DISABLE_AUTH_ROOT_AUTO_UPDATE;
+  config.dwUrlRetrievalTimeout = 2000;
+  if (!CertCreateCertificateChainEngine(&config, &test.engine)) return Fail(GetLastError());
+  engine = test.engine;
+#endif
 
   std::vector<BYTE> der;
   BYTE buffer[4096];
@@ -53,10 +98,14 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, wchar_t*, int) {
   chain_parameters.dwUrlRetrievalTimeout = 8000;
   PCCERT_CHAIN_CONTEXT chain = nullptr;
   // Use the user's Windows trust policy and permit normal issuer/root retrieval.
-  const DWORD flags = CERT_CHAIN_CACHE_END_CERT |
+  DWORD flags = CERT_CHAIN_CACHE_END_CERT |
       CERT_CHAIN_REVOCATION_CHECK_CHAIN_EXCLUDE_ROOT |
       CERT_CHAIN_REVOCATION_ACCUMULATIVE_TIMEOUT;
-  const BOOL built = CertGetCertificateChain(nullptr, certificate, nullptr,
+#ifdef LEDGER_TLS_POLICY_TEST
+  flags |= CERT_CHAIN_CACHE_ONLY_URL_RETRIEVAL |
+      CERT_CHAIN_DISABLE_AIA | CERT_CHAIN_DISABLE_AUTH_ROOT_AUTO_UPDATE;
+#endif
+  const BOOL built = CertGetCertificateChain(engine, certificate, nullptr,
       certificate->hCertStore, &chain_parameters, flags, nullptr, &chain);
   const DWORD build_error = built ? ERROR_SUCCESS : GetLastError();
   CertFreeCertificateContext(certificate);
@@ -79,5 +128,6 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, wchar_t*, int) {
       CERT_CHAIN_POLICY_SSL, chain, &policy, &status);
   const DWORD error = checked ? status.dwError : GetLastError();
   CertFreeCertificateChain(chain);
+  if (!checked) return Fail(error);
   return error == ERROR_SUCCESS ? 0 : Fail(error);
 }
