@@ -28,18 +28,6 @@ permissions:
   contents: read
 
 jobs:
-  stop_stalled_validation:
-    name: Stop superseded validation
-    runs-on: ubuntu-latest
-    permissions:
-      actions: write
-    steps:
-      - name: Cancel the obsolete confirmation-dialog run
-        continue-on-error: true
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh api --method POST repos/iaKouhZ/flutter-todo/actions/runs/44274190011/cancel
-
   build:
     name: Windows ${{ matrix.arch }}
     strategy:
@@ -49,7 +37,7 @@ jobs:
     runs-on: ${{ matrix.arch == 'arm64' && 'windows-11-arm' || 'windows-2022' }}
     timeout-minutes: 40
     env:
-      SERVER_PROBE_URL: ${{ inputs.server_probe || 'https://todo.v2t.top' }}
+      SERVER_PROBE_URL: ${{ inputs.server_probe }}
     defaults:
       run:
         shell: pwsh
