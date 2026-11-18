@@ -167,6 +167,13 @@ void main() {
     expect(() => serverAddress('https://me:pass@example.com/todo/'), throwsA(isA<TodoError>()));
   });
 
+  test('network errors retain their diagnostic cause', () {
+    expect(readableError(const SocketException('DNS lookup failed')),
+      contains('DNS lookup failed'));
+    expect(readableError(const HandshakeException('Certificate chain incomplete')),
+      contains('Certificate chain incomplete'));
+  });
+
   test('guest reads a public server but cannot change it', () async {
     final feed = await client.feed('tracked');
     expect(feed.admin, isFalse);

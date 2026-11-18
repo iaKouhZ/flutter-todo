@@ -1,4 +1,4 @@
-#ifndef TargetArch
+﻿#ifndef TargetArch
   #define TargetArch "x64"
 #endif
 #ifndef SourceDir
@@ -17,14 +17,16 @@ DefaultDirName={localappdata}\Programs\TodoEndfield
 DefaultGroupName=待办清单
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
-CreateUninstallRegKey=no
-UpdateUninstallLogAppName=no
-UsePreviousAppDir=no
+CreateUninstallRegKey=yes
+UpdateUninstallLogAppName=yes
+UsePreviousAppDir=yes
 UsePreviousGroup=no
 UsePreviousTasks=no
 UsePreviousLanguage=no
 UsePreviousUserInfo=no
 Uninstallable=yes
+SetupIconFile=windows\runner\resources\app_icon.ico
+UninstallIconFile=windows\runner\resources\app_icon.ico
 UninstallDisplayIcon={app}\todo_endfield.exe
 AppMutex=Local\TodoEndfield.Desktop
 CloseApplications=yes

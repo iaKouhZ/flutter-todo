@@ -24,16 +24,42 @@ if ($install.ExitCode -ne 0) { throw "Installer failed: $($install.ExitCode)." }
 if (-not (Test-Path "$installDir/todo_endfield.exe") -or -not (Test-Path "$installDir/unins000.exe")) {
     throw 'Installed program or uninstaller is missing.'
 }
-foreach ($hive in @('HKCU:', 'HKLM:')) {
-    $key = "$hive\Software\Microsoft\Windows\CurrentVersion\Uninstall\TodoEndfield.Desktop_is1"
-    if (Test-Path $key) { throw "Unexpected uninstall registry entry: $key." }
+$uninstallKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\TodoEndfield.Desktop_is1'
+if (-not (Test-Path $uninstallKey)) { throw 'Windows uninstall registration was not created.' }
+$entry = Get-ItemProperty -LiteralPath $uninstallKey
+if ($entry.DisplayName -ne '待办清单' -or $entry.UninstallString -notlike "*$installDir*") {
+    throw 'Windows uninstall registration points to an unexpected application.'
 }
+if (Test-Path 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\TodoEndfield.Desktop_is1') {
+    throw 'Unexpected machine-wide uninstall registration.'
+}
+Add-Type -AssemblyName System.Drawing
+function Confirm-LedgerIcon([string]$Path) {
+    $icon = [Drawing.Icon]::ExtractAssociatedIcon($Path)
+    if (-not $icon) { throw "Missing icon in $Path." }
+    $bitmap = $icon.ToBitmap()
+    try {
+        $corner = $bitmap.GetPixel(0, 0)
+        if ($corner.R -lt 240 -or $corner.G -lt 230 -or $corner.B -gt 30) {
+            throw "Unexpected app or installer icon in $Path."
+        }
+    } finally {
+        $bitmap.Dispose()
+        $icon.Dispose()
+    }
+}
+Confirm-LedgerIcon "$installDir/todo_endfield.exe"
+Confirm-LedgerIcon $installer
+
 
 $running = Start-Process -FilePath "$installDir/todo_endfield.exe" -WorkingDirectory $env:RUNNER_TEMP -PassThru
 try {
     Start-Sleep -Seconds 8
     $running.Refresh()
     if ($running.HasExited) { throw 'Installed desktop app exited during the startup smoke test.' }
+    if ($running.MainWindowTitle -ne '待办清单') {
+        throw "Unexpected desktop window title: $($running.MainWindowTitle)"
+    }
 } finally {
     if (-not $running.HasExited) { Stop-Process -Id $running.Id -Force }
 }
@@ -44,4 +70,5 @@ $uninstall = Start-Process -FilePath "$installDir/unins000.exe" -ArgumentList @(
 if ($uninstall.ExitCode -ne 0) { throw "Uninstaller failed: $($uninstall.ExitCode)." }
 Start-Sleep -Seconds 2
 if (Test-Path "$installDir/todo_endfield.exe") { throw 'The installed app was not removed.' }
-Write-Output "$TargetArch native, installation, launch and uninstall checks passed."
+if (Test-Path $uninstallKey) { throw 'Uninstall left its registration data behind.' }
+Write-Output "$TargetArch native, icons, Unicode title, installation and uninstall cleanup checks passed."

@@ -45,3 +45,7 @@ add_executable(ledger_native_test "device_settings_test.cpp" "device_settings.cp
 apply_standard_settings(ledger_native_test)
 target_compile_definitions(ledger_native_test PRIVATE "NOMINMAX" "UNICODE" "_UNICODE")
 target_link_libraries(ledger_native_test PRIVATE "crypt32.lib" "shell32.lib" "ole32.lib" "user32.lib")
+
+# Treat all Windows runner source strings as UTF-8.
+target_compile_options(${BINARY_NAME} PRIVATE /utf-8)
+target_compile_options(ledger_native_test PRIVATE /utf-8)

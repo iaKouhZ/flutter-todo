@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
@@ -229,6 +230,14 @@ class Session extends ChangeNotifier {
 String readableError(Object error) {
   if (error is TodoError) return error.message;
   if (error is TimeoutException) return '连接超时，请检查服务器和网络。';
+  if (error is HandshakeException) {
+    return 'HTTPS 证书校验失败：${error.osError?.message ?? error.message}';
+  }
+  if (error is SocketException) {
+    return '无法连接服务器：${error.osError?.message ?? error.message}';
+  }
+  if (error is HttpException) return 'HTTP 请求失败：${error.message}';
+  if (error is FormatException) return '服务器响应格式错误：${error.message}';
   if (error is PlatformException) return error.message ?? '无法访问本机设置。';
   return '连接失败，请检查网络、服务器地址和 HTTPS 证书。';
 }

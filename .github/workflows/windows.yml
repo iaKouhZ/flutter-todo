@@ -72,6 +72,8 @@ jobs:
       - run: flutter pub get
       - run: flutter analyze
       - run: flutter test
+      - name: Verify live server connectivity
+        run: flutter test --dart-define=TEST_SERVER_URL=https://todo.v2t.top test/live_connection_test.dart
       - name: Build Windows application
         run: |
           flutter build windows --release --build-number "$env:GITHUB_RUN_NUMBER"

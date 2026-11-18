@@ -207,7 +207,8 @@ class _WorkspaceState extends State<Workspace> with WidgetsBindingObserver {
       if (!session.initialized) {
         return const Scaffold(body: Center(child: CircularProgressIndicator()));
       }
-      if (session.server == null || session.arrangingServer) {
+      if (session.server == null || session.arrangingServer ||
+          session.feed == null && session.gate == null && session.error != null) {
         return GateScreen(
           key: ValueKey(session.server?.base.toString()),
           reason: session.error ?? '输入待办清单的站点地址。',
