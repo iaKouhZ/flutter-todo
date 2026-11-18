@@ -77,7 +77,8 @@ jobs:
           }
       - run: flutter pub get
       - run: flutter analyze
-      - run: flutter test
+      - name: Verify server protocol and client behavior
+        run: flutter test
       - name: Verify live server connectivity
         if: env.SERVER_PROBE_URL != ''
         run: flutter test "--dart-define=TEST_SERVER_URL=$env:SERVER_PROBE_URL" test/live_connection_test.dart
