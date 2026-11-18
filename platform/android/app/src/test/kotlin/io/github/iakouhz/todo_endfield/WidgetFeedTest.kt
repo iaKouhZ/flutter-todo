@@ -96,4 +96,43 @@ class WidgetFeedTest {
         assertEquals((1..12).map { "↳ 子任务 $it" }, rows.subList(1, 13).map { it.title })
         assertEquals("任务 15", rows.last().title)
     }
+    @Test
+    fun acceptsHourCountdownsAcrossMidnightAndYearWhileKeepingParentFirst() {
+        val tracked = row(1, "2027-01-18", "长期任务",
+            child("跨年", "不到1小时 · 1月1日 00:15") +
+                child("两小时后", "2小时后 · 1月1日 02:30") +
+                child("一天两小时", "1天2小时后 · 1月2日 02:30"), tracked = true)
+        assertEquals(
+            listOf(WidgetRow("长期任务", "2027-01-18"),
+                WidgetRow("↳ 跨年", "2027-01-01 00:15"),
+                WidgetRow("↳ 两小时后", "2027-01-01 02:30"),
+                WidgetRow("↳ 一天两小时", "2027-01-02 02:30")),
+            WidgetFeed.rows(doc(tracked), doc(tracked), "2026-12-31 23:45"),
+        )
+    }
+
+    @Test
+    fun dateOnlyCountdownUsesEndOfDayAndStillFiltersByTrackedServerRows() {
+        val tracked = row(1, "", "无截止日期",
+            child("无具体时刻", "1天14小时后 · 1月2日") +
+                child("当天较晚", "14小时后 · 1月1日"), tracked = true)
+        val untracked = row(2, "", "未追踪",
+            child("不显示", "不到1小时 · 1月1日 09:30"))
+        assertEquals(
+            listOf(WidgetRow("无截止日期", ""),
+                WidgetRow("↳ 当天较晚", "01/01"), WidgetRow("↳ 无具体时刻", "01/02")),
+            WidgetFeed.rows(doc(tracked, untracked), doc(tracked, untracked), "2027-01-01 09:00"),
+        )
+    }
+
+    @Test
+    fun hourCountdownCanIdentifyLeapDayAndRejectMalformedDates() {
+        val tracked = row(1, "", "闰年",
+            child("闰日", "1天0小时后 · 2月29日 09:00") +
+                child("不存在日期", "2天0小时后 · 2月30日 09:00") +
+                child("时刻非法", "1小时后 · 2月28日 99:99"), tracked = true)
+        assertEquals(listOf(WidgetRow("闰年", ""), WidgetRow("↳ 闰日", "02/29 09:00")),
+            WidgetFeed.rows(doc(tracked), doc(tracked), "2028-02-28 09:00"))
+    }
+
 }

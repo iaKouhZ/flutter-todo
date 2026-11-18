@@ -6,6 +6,7 @@ import org.jsoup.nodes.Document
 import java.net.URI
 import java.text.SimpleDateFormat
 import java.util.Date
+import kotlin.math.abs
 import java.util.Locale
 import java.util.TimeZone
 
@@ -101,7 +102,10 @@ internal class WidgetFeed(server: String) {
     companion object {
         private val isoDate = Regex("[0-9]{4}-[0-9]{2}-[0-9]{2}")
         private val timeAtEnd = Regex("[0-9]{2}:[0-9]{2}$")
-        private val subtaskLabel = Regex("(今天|明天|T\\+([0-9]+))\\s*·\\s*([0-9]+)月([0-9]+)日(?:\\s+([0-9]{2}:[0-9]{2}))?")
+        private val subtaskLabel = Regex(
+            "(今天|明天|T\\+[0-9]+|不到1小时|[0-9]+小时后|[0-9]+天[0-9]+小时后)" +
+                "\\s*·\\s*([0-9]+)月([0-9]+)日(?:\\s+([0-9]{2}:[0-9]{2}))?")
+        private val remainingHours = Regex("(?:([0-9]+)天)?([0-9]+)小时后")
         private const val rowSelector = ".tl-main__scroll [data-task-row]"
 
         private fun serverNow(doc: Document): String {
@@ -150,23 +154,62 @@ internal class WidgetFeed(server: String) {
                     val title = item.selectFirst("span:first-child")?.text().orEmpty()
                     val label = item.selectFirst(".tl-row__subdue")?.text().orEmpty()
                     val match = subtaskLabel.matchEntire(label) ?: return@mapNotNull null
-                    val offset = when (match.groupValues[1]) {
-                        "今天" -> 0
-                        "明天" -> 1
-                        else -> match.groupValues[2].toIntOrNull() ?: return@mapNotNull null
-                    }
-                    val date = calendarDate.format(Date(today.time + offset * 86_400_000L))
-                    if (!isoDate.matches(date) || title.isBlank() ||
-                        date.substring(5, 7).toInt() != match.groupValues[3].toIntOrNull() ||
-                        date.substring(8, 10).toInt() != match.groupValues[4].toIntOrNull()
-                    ) return@mapNotNull null
-                    val time = match.groupValues[5]
+                    val date = childDate(match, now, today, calendarDate) ?: return@mapNotNull null
+                    if (title.isBlank()) return@mapNotNull null
+                    val time = match.groupValues[4]
                     Deadline(id, "↳ $title", date, time,
                         "$date ${time.ifEmpty { "23:59" }}" < now)
                 }
                 if (deadlines.isNotEmpty()) groups[id] = SubtaskGroup(parentTitle, deadlines)
             }
             return groups
+        }
+
+        // Resolve the year from the server's relative hours and calendar label.
+        // A label such as "不到1小时 · 1月1日 00:15" can cross midnight/year
+        // even though it contains no whole day. Do not treat rounded hours as days.
+        private fun childDate(match: MatchResult, now: String, today: Date,
+            calendarDate: SimpleDateFormat): String? {
+            val label = match.groupValues[1]
+            val month = match.groupValues[2].toIntOrNull() ?: return null
+            val day = match.groupValues[3].toIntOrNull() ?: return null
+            fun matches(date: String) = isoDate.matches(date) &&
+                date.substring(5, 7).toInt() == month && date.substring(8, 10).toInt() == day
+            val legacyDays = when {
+                label == "今天" -> 0L
+                label == "明天" -> 1L
+                label.startsWith("T+") -> label.substring(2).toLongOrNull()
+                else -> null
+            }
+            if (legacyDays != null) {
+                if (legacyDays !in 0..365000L) return null
+                return calendarDate.format(Date(today.time + legacyDays * 86_400_000L))
+                    .takeIf(::matches)
+            }
+            val hours = if (label == "不到1小时") 0L else {
+                val remaining = remainingHours.matchEntire(label) ?: return null
+                val days = remaining.groupValues[1].ifEmpty { "0" }.toLongOrNull() ?: return null
+                val part = remaining.groupValues[2].toLongOrNull() ?: return null
+                if (days !in 0..365000L || part !in 0..23L && remaining.groupValues[1].isNotEmpty())
+                    return null
+                days * 24 + part
+            }
+            if (hours !in 0..8_760_000L) return null
+            val clock = now.substring(11).split(':')
+            val current = today.time + clock[0].toLong() * 3_600_000L + clock[1].toLong() * 60_000L
+            val estimate = current + hours * 3_600_000L
+            val year = calendarDate.format(Date(estimate)).substring(0, 4).toInt()
+            val time = match.groupValues[4].ifEmpty { "23:59" }.split(':')
+            val hour = time[0].toIntOrNull() ?: return null
+            val minute = time[1].toIntOrNull() ?: return null
+            if (hour !in 0..23 || minute !in 0..59) return null
+            return (year - 1..year + 1).mapNotNull { candidateYear ->
+                val date = String.format(Locale.US, "%04d-%02d-%02d", candidateYear, month, day)
+                val parsed = try { calendarDate.parse(date) } catch (_: Exception) { null }
+                    ?: return@mapNotNull null
+                if (!matches(date)) return@mapNotNull null
+                date to abs(parsed.time + hour * 3_600_000L + minute * 60_000L - estimate)
+            }.minByOrNull { it.second }?.first
         }
 
         private fun nearestFirst(candidates: List<Deadline>): List<Deadline> {

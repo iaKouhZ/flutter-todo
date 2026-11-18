@@ -160,8 +160,9 @@ class Feed {
 }
 
 class Subtask {
-  const Subtask(this.title, this.deadline, this.done, this.index);
-  final String title, deadline;
+  const Subtask(this.title, this.deadline, this.done, this.index,
+      {this.id = '', this.completedAt = ''});
+  final String title, deadline, id, completedAt;
   final bool done;
   final int index;
 }
@@ -173,8 +174,14 @@ class TaskDetail {
     }
     for (final (index, row) in root!.querySelectorAll('.tl-detail__subitem').indexed) {
       final title = textOf(row, '.tl-detail__subtitle > span:first-child');
+      final completion = row.querySelector('input[name="completed_at"]')?.attributes['value'] ??
+          RegExp(r'\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}').firstMatch(
+            row.querySelectorAll('.tl-detail__subdue').map((node) => node.text).join(' '),
+          )?.group(0)?.replaceFirst(' ', 'T') ?? '';
+      final id = row.querySelector('input[name="subitem_id"]')?.attributes['value'] ?? '';
       subtasks.add(Subtask(title, textOf(row, '.tl-detail__subdue'),
-        row.querySelector('.tl-detail__subbox--on') != null, index));
+        row.querySelector('.tl-detail__subbox--on') != null, index,
+        id: id, completedAt: completion));
     }
     for (final row in root!.querySelectorAll('.tl-fact')) {
       facts[textOf(row, '.tl-fact__label')] = textOf(row, '.tl-fact__value');
@@ -202,6 +209,16 @@ class TaskDetail {
     return null;
   }
 
+  Element? subtaskCompletionForm(int index) {
+    final rows = root!.querySelectorAll('.tl-detail__subitem');
+    if (index < 0 || index >= rows.length) return null;
+    for (final form in rows[index].querySelectorAll('form')) {
+      if (input(form, 'op') == 'subitem_done' &&
+          form.querySelector('input[name="completed_at"]') != null) return form;
+    }
+    return null;
+  }
+
   Element? form(String operation, {int? index}) {
     final rows = root!.querySelectorAll('.tl-detail__subitem');
     if (index != null && (index < 0 || index >= rows.length)) return null;
@@ -224,9 +241,7 @@ Map<String, String> formValues(Element form) {
   for (final field in form.querySelectorAll('input[name], select[name], textarea[name]')) {
     final name = field.attributes['name']!;
     final type = field.attributes['type'] ?? '';
-    final bracket = name.indexOf('[');
-    final baseName = bracket < 0 ? name : name.substring(0, bracket);
-    if (field.attributes.containsKey('disabled') && baseName != 'subitem_done') continue;
+    if (field.attributes.containsKey('disabled')) continue;
     if (type == 'checkbox' && !field.attributes.containsKey('checked')) continue;
     if (type == 'button' || type == 'submit' || type == 'file') continue;
     if (field.localName == 'select') {
@@ -242,8 +257,10 @@ Map<String, String> formValues(Element form) {
 typedef Deadline = ({String date, String time});
 
 class EditableSubtask {
-  const EditableSubtask(this.id, this.title, this.deadline, this.index);
-  final String id, title, index;
+  const EditableSubtask(this.id, this.title, this.deadline, this.index,
+      {this.done = false, this.completedAt = ''});
+  final String id, title, index, completedAt;
+  final bool done;
   final Deadline deadline;
 }
 
@@ -264,6 +281,8 @@ class TaskEditor {
           time: fields['subitem_due_time[$index]'] ?? '',
         ),
         index,
+        done: fields['subitem_done[$index]'] == '1' || fields['status'] == 'done',
+        completedAt: fields['subitem_completed_at[$index]'] ?? '',
       );
     }
   }
@@ -272,7 +291,7 @@ class TaskEditor {
   final Map<String, String> fields;
   final categories = <String, String>{};
   final subtasks = <String, EditableSubtask>{};
-  bool get course => form.querySelector('input[name="title"][readonly]') != null;
+  bool get readOnlyDetails => form.querySelector('input[name="title"][readonly]') != null;
   bool get confirmRepeat => form.querySelector('input[name="repeat_change_confirm"]') != null;
 }
 
@@ -481,9 +500,22 @@ class TodoServer {
     if (page.document.querySelector('#bulk-form') == null) throw const LoginRequired();
     final detail = TaskDetail(page.document);
     final editingCompletion = op == 'complete' && extra.containsKey('completed_at');
-    final form = editingCompletion ? detail.completionForm : detail.form(op, index: index);
+    final editingSubtaskCompletion = op == 'subitem_done' && extra.containsKey('completed_at');
+    final expectedId = extra['subtask_id'];
+    if (index != null && expectedId != null && expectedId.isNotEmpty) {
+      index = detail.subtasks.indexWhere((subtask) => subtask.id == expectedId);
+      if (index < 0) throw const TodoError('子任务已被删除，请刷新详情。');
+    }
+    final form = editingCompletion ? detail.completionForm :
+        editingSubtaskCompletion && index != null ? detail.subtaskCompletionForm(index) :
+        detail.form(op, index: index);
     if (editingCompletion && form == null) {
       throw const TodoError('任务已恢复为未完成，请刷新详情。');
+    }
+    if (editingSubtaskCompletion &&
+        (index == null || index < 0 || index >= detail.subtasks.length ||
+         !detail.subtasks[index].done || form == null)) {
+      throw const TodoError('子任务已恢复为未完成，或服务器不支持编辑完成时间。请刷新详情。');
     }
     if (form == null) throw const TodoError('此任务目前不支持这项操作。');
     if (editingCompletion && ['scope', 'date'].any((key) =>
@@ -493,21 +525,25 @@ class TodoServer {
     if (form.querySelector('button[disabled]') != null) {
       throw const TodoError('此子任务目前无法修改。');
     }
-    if (index != null && extra['subtask_title'] != detail.subtasks[index].title) {
+    if (index != null && (index < 0 || index >= detail.subtasks.length ||
+        extra['subtask_title'] != detail.subtasks[index].title)) {
       throw const TodoError('子任务列表已变化，请刷新详情后再操作。');
     }
     final fields = {
-      ...formValues(form), ...extra, if (editingCompletion) 'done': '1',
-    }..remove('subtask_title');
+      ...formValues(form), ...extra,
+      if (editingCompletion || editingSubtaskCompletion) 'done': '1',
+    }..remove('subtask_title')..remove('subtask_id');
     await _submit(page.url, form, fields);
   }
 
   Future<void> save(Task? task, Map<String, String> changes,
-      {Map<String, Deadline> subtaskDeadlines = const {}}) async {
+      {Map<String, Deadline> subtaskDeadlines = const {},
+       Map<String, String> subtaskCompletions = const {}}) async {
     final fresh = await editor(task);
     // The HTML field is only precise to the minute. Preserve the stored
     // timestamp unless the user explicitly chooses to change it.
     final fields = {...fresh.fields}..remove('completed_at');
+    fields.removeWhere((key, _) => key.startsWith('subitem_completed_at['));
     fields.removeWhere((key, _) => ['tracked', 'pinned'].contains(key) && changes[key] == '');
     fields.addAll(changes);
     if (subtaskDeadlines.isNotEmpty && fresh.fields['status'] == 'done') {
@@ -521,6 +557,17 @@ class TodoServer {
       final index = subtask.index;
       fields['subitem_due_date[$index]'] = entry.value.date;
       fields['subitem_due_time[$index]'] = entry.value.time;
+    }
+    for (final entry in subtaskCompletions.entries) {
+      final subtask = fresh.subtasks[entry.key];
+      if (subtask == null || !((changes['status'] ?? fresh.fields['status']) == 'done' ||
+          fresh.fields['status'] != 'done' && subtask.done)) {
+        throw const TodoError('子任务完成状态已变化，请重新打开编辑页。');
+      }
+      if (!fresh.fields.containsKey('subitem_completed_at[${subtask.index}]')) {
+        throw const TodoError('服务器不支持编辑子任务完成时间。');
+      }
+      fields['subitem_completed_at[${subtask.index}]'] = entry.value;
     }
     await _submit(fresh.page, fresh.form, fields);
   }
