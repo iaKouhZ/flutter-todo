@@ -1,7 +1,7 @@
 <resources>
     <string name="app_name">待办清单</string>
     <string name="widget_title">最近到期</string>
-    <string name="widget_description">显示最近到期的三项待办</string>
+    <string name="widget_description">可滚动查看待办及子任务，可拖动调整小组件尺寸</string>
     <string name="widget_loading">正在同步待办…</string>
     <string name="widget_setup">点击打开应用并设置服务器</string>
     <string name="widget_sign_in">请打开应用重新登录</string>

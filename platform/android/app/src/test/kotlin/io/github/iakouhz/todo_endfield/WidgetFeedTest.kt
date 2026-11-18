@@ -32,7 +32,8 @@ class WidgetFeedTest {
             child("元旦检查", "明天 · 1月1日 08:00"), tracked = true, doneOccurrence = true)
         assertEquals(
             listOf(WidgetRow("年末", "12/31"), WidgetRow("已完成的单次发生", ""),
-                WidgetRow("↳ 元旦检查", "2027-01-01 08:00")),
+                WidgetRow("↳ 元旦检查", "2027-01-01 08:00"), WidgetRow("元旦", "2027-01-01"),
+                WidgetRow("去年同月日", "01/01")),
             WidgetFeed.rows(doc(previous, nextYear, thisYear), doc(tracked), "2026-12-31 09:00"),
         )
     }
@@ -62,22 +63,37 @@ class WidgetFeedTest {
         val unrelated = row(2, "2027-01-01", "其他主任务")
         assertEquals(
             listOf(WidgetRow("微积分 A(I)", "2027-01-18"),
-                WidgetRow("↳ 洛必达法则", "12/31 13:30"), WidgetRow("↳ 同日更晚", "12/31 16:00")),
+                WidgetRow("↳ 洛必达法则", "12/31 13:30"), WidgetRow("↳ 同日更晚", "12/31 16:00"),
+                WidgetRow("↳ 微分中值定理", "2027-01-02"), WidgetRow("其他主任务", "2027-01-01")),
             WidgetFeed.rows(doc(parent, unrelated), doc(tracked), "2026-12-31 09:00"),
         )
     }
 
     @Test
-    fun skipsAnUndatedParentWhenNoChildCanFitBelowIt() {
+    fun keepsUndatedParentsAndChildrenBeyondTheFirstThreeRows() {
         val first = row(1, "2026-12-31", "第一项")
         val second = row(2, "2027-01-01", "第二项")
         val third = row(3, "2027-01-04", "第三项")
         val undated = row(4, "", "无截止主任务",
             child("检查", "T+2 · 1月2日"), tracked = true)
         assertEquals(
-            listOf("第一项", "第二项", "第三项"),
+            listOf("第一项", "第二项", "无截止主任务", "↳ 检查", "第三项"),
             WidgetFeed.rows(doc(third, first, second), doc(undated), "2026-12-31 09:00")
                 .map { it.title },
         )
+    }
+
+    @Test
+    fun keepsAllRowsForScrollingAndGroupsEveryChildBelowItsParent() {
+        val children = (1..12).reversed().joinToString("") {
+            child("子任务 $it", "T+$it · 1月$it日")
+        }
+        val parent = row(1, "2027-01-18", "长期任务", children, tracked = true)
+        val others = (2..15).map { row(it, "2027-02-01", "任务 $it") }
+        val rows = WidgetFeed.rows(doc(parent, *others.toTypedArray()), doc(parent), "2026-12-31 09:00")
+        assertEquals(27, rows.size)
+        assertEquals("长期任务", rows.first().title)
+        assertEquals((1..12).map { "↳ 子任务 $it" }, rows.subList(1, 13).map { it.title })
+        assertEquals("任务 15", rows.last().title)
     }
 }

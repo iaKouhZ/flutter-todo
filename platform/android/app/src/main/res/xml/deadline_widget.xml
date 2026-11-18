@@ -6,6 +6,6 @@
     android:initialLayout="@layout/deadline_widget"
     android:previewLayout="@layout/deadline_widget"
     android:description="@string/widget_description"
-    android:resizeMode="none"
+    android:resizeMode="horizontal|vertical"
     android:updatePeriodMillis="0"
     android:widgetCategory="home_screen" />

@@ -6,6 +6,9 @@ import android.appwidget.AppWidgetProvider
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
+import android.os.Build
+import android.os.Bundle
 import android.view.View
 import android.widget.RemoteViews
 import androidx.work.Constraints
@@ -24,6 +27,12 @@ class DeadlineWidget : AppWidgetProvider() {
         draw(context)
         schedulePeriodic(context)
         enqueue(context)
+    }
+
+    override fun onAppWidgetOptionsChanged(
+        context: Context, manager: AppWidgetManager, id: Int, options: Bundle,
+    ) {
+        draw(context)
     }
 
     override fun onDisabled(context: Context) {
@@ -73,7 +82,7 @@ class DeadlineWidget : AppWidgetProvider() {
             val launch = Intent(context, MainActivity::class.java)
                 .setAction(Intent.ACTION_MAIN)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-            views.setOnClickPendingIntent(android.R.id.background,
+            views.setOnClickPendingIntent(R.id.widget_header,
                 PendingIntent.getActivity(context, 0, launch,
                     PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
             val message = when {
@@ -90,19 +99,33 @@ class DeadlineWidget : AppWidgetProvider() {
                 else R.string.widget_title))
             views.setTextViewText(R.id.widget_status, context.getString(message))
             views.setViewVisibility(R.id.widget_status, if (rows.isEmpty()) View.VISIBLE else View.GONE)
-            val rowViews = listOf(
-                Triple(R.id.widget_first, R.id.widget_first_title, R.id.widget_first_deadline),
-                Triple(R.id.widget_second, R.id.widget_second_title, R.id.widget_second_deadline),
-                Triple(R.id.widget_third, R.id.widget_third_title, R.id.widget_third_deadline),
-            )
-            rowViews.forEachIndexed { index, (container, title, deadline) ->
-                val row = rows.getOrNull(index)
-                views.setViewVisibility(container, if (row == null) View.GONE else View.VISIBLE)
-                views.setTextViewText(title, row?.title.orEmpty())
-                views.setTextViewText(deadline, row?.deadline.orEmpty())
-            }
+            views.setEmptyView(R.id.widget_list, R.id.widget_status)
+            views.setPendingIntentTemplate(R.id.widget_list,
+                PendingIntent.getActivity(context, 1, launch,
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE))
             val widgetIds = ids(context)
-            if (widgetIds.isNotEmpty()) manager.updateAppWidget(widgetIds, views)
+            for (id in widgetIds) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    val items = RemoteViews.RemoteCollectionItems.Builder()
+                        .setViewTypeCount(1)
+                        .setHasStableIds(false)
+                    rows.forEachIndexed { index, row ->
+                        items.addItem(index.toLong(), DeadlineWidgetService.rowViews(context, row))
+                    }
+                    views.setRemoteAdapter(R.id.widget_list, items.build())
+                } else {
+                    val adapter = Intent(context, DeadlineWidgetService::class.java)
+                        .putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, id)
+                        .setData(Uri.parse("ledger-widget://list/$id"))
+                    @Suppress("DEPRECATION")
+                    views.setRemoteAdapter(R.id.widget_list, adapter)
+                }
+                manager.updateAppWidget(id, views)
+            }
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S && widgetIds.isNotEmpty()) {
+                @Suppress("DEPRECATION")
+                manager.notifyAppWidgetViewDataChanged(widgetIds, R.id.widget_list)
+            }
         }
     }
 }

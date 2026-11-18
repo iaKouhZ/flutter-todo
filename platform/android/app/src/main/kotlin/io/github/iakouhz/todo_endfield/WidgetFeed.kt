@@ -184,17 +184,15 @@ internal class WidgetFeed(server: String) {
             val year = now.substring(0, 4)
             return buildList {
                 for (group in groups) {
-                    val spots = 3 - size
-                    if (spots == 0) break
                     val parent = parents[group.id]
                     val subtasks = children[group.id]
                     if (parent == null) {
-                        if (spots < 2 || subtasks == null) continue
+                        if (subtasks == null) continue
                         add(WidgetRow(subtasks.title, ""))
                     } else {
                         add(parent.display(year))
                     }
-                    subtasks?.deadlines?.sortedBy { it.key }?.take(spots - 1)?.forEach {
+                    subtasks?.deadlines?.sortedBy { it.key }?.forEach {
                         add(it.display(year))
                     }
                 }
