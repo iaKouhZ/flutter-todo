@@ -52,6 +52,8 @@ jobs:
           if ($env:PROCESSOR_ARCHITECTURE -ne 'ARM64') { throw 'Expected native ARM64 PowerShell.' }
           Remove-Item -LiteralPath "$env:FLUTTER_ROOT/bin/cache/engine-dart-sdk.stamp" -Force -ErrorAction SilentlyContinue
           & "$env:FLUTTER_ROOT/bin/internal/update_dart_sdk.ps1"
+          Remove-Item -LiteralPath "$env:FLUTTER_ROOT/bin/cache/flutter_tools.snapshot" -Force -ErrorAction SilentlyContinue
+          Remove-Item -LiteralPath "$env:FLUTTER_ROOT/bin/cache/flutter_tools.stamp" -Force -ErrorAction SilentlyContinue
           $dartVersion = & "$env:FLUTTER_ROOT/bin/dart.bat" --version 2>&1 | Out-String
           Write-Output $dartVersion
           if ($dartVersion -notmatch 'windows_arm64') { throw 'Expected native ARM64 Dart.' }
