@@ -1,0 +1,70 @@
+name: Windows installers
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/windows.yml'
+      - 'lib/**'
+      - 'test/**'
+      - 'platform/windows/**'
+      - 'platform/*windows*'
+      - 'pubspec.yaml'
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Windows ${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner: windows-2022
+          - arch: arm64
+            runner: windows-11-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 40
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.0'
+          channel: stable
+          architecture: x64
+          cache: true
+      - name: Generate Windows project
+        run: ./platform/prepare-windows.ps1
+      - name: Audit registry writes
+        run: |
+          $sources = Get-ChildItem windows/runner -Include *.cpp,*.h -Recurse
+          $writes = $sources | Select-String -Pattern '\bReg(Create|Set|Delete|Replace|Restore|Load|UnLoad|Save|Rename|SetKeySecurity)\w*\s*\('
+          if ($writes) { throw 'Registry write call found in Windows runner sources.' }
+          if (Select-String -Path platform/windows-installer.iss -Pattern '^\[Registry\]') {
+            throw 'Installer includes registry entries.'
+          }
+      - run: flutter pub get
+      - run: flutter analyze
+      - run: flutter test
+      - name: Build Windows application
+        run: |
+          flutter build windows --release --build-number "$env:GITHUB_RUN_NUMBER"
+          if ($LASTEXITCODE -ne 0) { throw 'Flutter Windows build failed.' }
+      - name: Package installer
+        run: ./platform/package-windows.ps1 -TargetArch ${{ matrix.arch }}
+      - name: Verify Windows application and installer
+        run: ./platform/verify-windows.ps1 -TargetArch ${{ matrix.arch }}
+      - uses: actions/upload-artifact@v7
+        with:
+          path: dist/flutter-todo-windows-${{ matrix.arch }}-setup.exe
+          archive: false
+          if-no-files-found: error

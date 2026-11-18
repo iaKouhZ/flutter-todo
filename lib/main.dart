@@ -1,9 +1,11 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'server.dart';
+import 'desktop_settings.dart';
 import 'session.dart';
 
 const ink = Color(0xff1b1b18);
@@ -233,6 +235,13 @@ class _WorkspaceState extends State<Workspace> with WidgetsBindingObserver {
           title: Text(feed?.name.isNotEmpty == true ? feed!.name : '待办清单',
             style: const TextStyle(fontWeight: FontWeight.w900)),
           actions: [
+            if (Platform.isWindows)
+              IconButton(
+                tooltip: '电脑版设置',
+                icon: const Icon(Icons.settings_outlined),
+                onPressed: () => Navigator.of(context).push<void>(
+                  MaterialPageRoute(builder: (_) => const DesktopSettingsScreen())),
+              ),
             IconButton(onPressed: feed == null || session.busy ? null : filter,
               tooltip: '搜索与筛选', icon: const Icon(Icons.tune)),
             PopupMenuButton<String>(

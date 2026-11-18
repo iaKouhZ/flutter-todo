@@ -1,6 +1,6 @@
-# 待办清单 · Android
+# 待办清单
 
-Todo Endfield 的 Flutter 客户端。界面使用原项目的奶油纸底、墨黑文字和信号黄，功能包括追踪、规划、已完成、全部、分类筛选、搜索与任务详情。
+Todo Endfield 的 Flutter Android / Windows 客户端。界面使用原项目的奶油纸底、墨黑文字和信号黄，功能包括追踪、规划、已完成、全部、分类筛选、搜索与任务详情。
 
 1. 在 [GitHub Actions](https://github.com/iaKouhZ/flutter-todo/actions/workflows/android.yml) 打开一次已签名的成功运行，从 Artifacts 直接下载 `flutter-todo.apk` 后安装。首批调试签名 APK 与正式签名不同，切换时需先卸载调试版。
 2. 首次打开填写原站的根地址，例如 `https://example.com/todo/`。客户端支持根目录与子目录部署，也支持原项目的两种 URL 模式。
@@ -62,3 +62,21 @@ Base64 可还原成原始密钥库文件。请把它和密码填进 Secrets，�
 #### 3. 构建并下载 APK
 
 在 **Actions → Android APK → Run workflow** 中选择 `main`。构建完成后，在该次运行的 **Artifacts** 区域直接下载 `flutter-todo.apk`。配置 Secrets 后，推送相关改动到 `main` 也会触发签名构建。
+
+## Windows 电脑版
+
+在 Actions 的 **Windows installers** 中选择成功的运行，直接下载对应的安装程序。
+
+| 系统 | 文件 |
+| --- | --- |
+| Windows 10 1809 及以上 / Windows 11 x64 | `flutter-todo-windows-x64-setup.exe` |
+| Windows 11 ARM64 | `flutter-todo-windows-arm64-setup.exe` |
+
+安装默认位于当前用户的 `%LOCALAPPDATA%\Programs\TodoEndfield`，可选择其他目录。右上角的齿轮打开「电脑版设置」。
+
+- 自启动开关在当前用户的 `shell:startup` 中创建或删除 `TodoEndfield.lnk`，默认关闭。
+- 窗口置顶立即生效，应用重启后恢复上次设置，默认关闭。
+- 服务器和设置保存在 `%LOCALAPPDATA%\TodoEndfield\settings.dat`。服务器密码由 Windows DPAPI 按当前用户加密。
+- 安装器关闭了卸载注册项。卸载入口在开始菜单的「卸载待办清单」或安装目录中的 `unins000.exe`，卸载会移除本应用的自启动快捷方式，保留个人配置文件。
+
+Windows runner 源码和安装脚本包含注册表写入检查，安装验证检查卸载注册项。构建会检查 PE 架构，测试密码加密、快捷方式和置顶，执行安装、启动与卸载检查。Windows 构建使用 Flutter 3.44.0。
