@@ -4,14 +4,21 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/windows.yml'
-      - 'lib/**'
-      - 'test/**'
       - 'platform/windows/**'
       - 'platform/*windows*'
-      - 'pubspec.yaml'
   pull_request:
     branches: [main]
+    paths:
+      - '.github/workflows/windows.yml'
+      - 'platform/windows/**'
+      - 'platform/*windows*'
   workflow_dispatch:
+    inputs:
+      architecture:
+        description: Windows architecture
+        type: choice
+        default: all
+        options: [all, x64, arm64]
 
 permissions:
   contents: read
@@ -22,12 +29,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - arch: x64
-            runner: windows-2022
-          - arch: arm64
-            runner: windows-11-arm
-    runs-on: ${{ matrix.runner }}
+        arch: ${{ fromJSON(github.event_name == 'workflow_dispatch' && inputs.architecture == 'x64' && '["x64"]' || github.event_name == 'workflow_dispatch' && inputs.architecture == 'arm64' && '["arm64"]' || '["x64","arm64"]') }}
+    runs-on: ${{ matrix.arch == 'arm64' && 'windows-11-arm' || 'windows-2022' }}
     timeout-minutes: 40
     defaults:
       run:

@@ -80,3 +80,13 @@ Base64 可还原成原始密钥库文件。请把它和密码填进 Secrets，�
 - 安装器关闭了卸载注册项。卸载入口在开始菜单的「卸载待办清单」或安装目录中的 `unins000.exe`，卸载会移除本应用的自启动快捷方式，保留个人配置文件。
 
 Windows runner 源码和安装脚本包含注册表写入检查，安装验证检查卸载注册项。构建会检查 PE 架构，测试密码加密、快捷方式和置顶，执行安装、启动与卸载检查。Windows 构建使用 Flutter 3.44.0。
+
+### Actions 触发范围
+
+| 修改范围 | 自动执行 |
+| --- | --- |
+| `platform/android/`、Android 准备/签名脚本 | Android APK |
+| `platform/windows/`、Windows 准备/打包/验证脚本 | Windows installers |
+| `lib/`、`test/`、`pubspec.yaml` | Shared Dart checks（静态分析与测试） |
+
+共享代码修改通过检查后，在对应平台的工作流页面选择 **Run workflow** 生成安装包。Windows 可选择 `all`、`x64` 或 `arm64`。

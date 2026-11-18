@@ -4,12 +4,16 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/android.yml'
-      - 'lib/**'
-      - 'test/**'
-      - 'platform/**'
-      - 'pubspec.yaml'
+      - 'platform/android/**'
+      - 'platform/prepare-android.sh'
+      - 'platform/sign-android.sh'
   pull_request:
     branches: [main]
+    paths:
+      - '.github/workflows/android.yml'
+      - 'platform/android/**'
+      - 'platform/prepare-android.sh'
+      - 'platform/sign-android.sh'
   workflow_dispatch:
 
 permissions:
