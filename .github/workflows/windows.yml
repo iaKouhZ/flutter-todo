@@ -19,6 +19,10 @@ on:
         type: choice
         default: all
         options: [all, x64, arm64]
+      server_probe:
+        description: Optional server URL for read-only connectivity checks
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -32,6 +36,8 @@ jobs:
         arch: ${{ fromJSON(github.event_name == 'workflow_dispatch' && inputs.architecture == 'x64' && '["x64"]' || github.event_name == 'workflow_dispatch' && inputs.architecture == 'arm64' && '["arm64"]' || '["x64","arm64"]') }}
     runs-on: ${{ matrix.arch == 'arm64' && 'windows-11-arm' || 'windows-2022' }}
     timeout-minutes: 40
+    env:
+      SERVER_PROBE_URL: ${{ inputs.server_probe }}
     defaults:
       run:
         shell: pwsh
@@ -73,7 +79,8 @@ jobs:
       - run: flutter analyze
       - run: flutter test
       - name: Verify live server connectivity
-        run: flutter test --dart-define=TEST_SERVER_URL=https://todo.v2t.top test/live_connection_test.dart
+        if: env.SERVER_PROBE_URL != ''
+        run: flutter test "--dart-define=TEST_SERVER_URL=$env:SERVER_PROBE_URL" test/live_connection_test.dart
       - name: Build Windows application
         run: |
           flutter build windows --release --build-number "$env:GITHUB_RUN_NUMBER"
@@ -81,7 +88,7 @@ jobs:
       - name: Package installer
         run: ./platform/package-windows.ps1 -TargetArch ${{ matrix.arch }}
       - name: Verify Windows application and installer
-        run: ./platform/verify-windows.ps1 -TargetArch ${{ matrix.arch }}
+        run: ./platform/verify-windows.ps1 -TargetArch ${{ matrix.arch }} -ServerUrl $env:SERVER_PROBE_URL
       - uses: actions/upload-artifact@v7
         with:
           path: dist/flutter-todo-windows-${{ matrix.arch }}-setup.exe

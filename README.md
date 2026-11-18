@@ -91,4 +91,4 @@ Windows runner 源码包含注册表写入检查。安装器只使用当前用�
 | `platform/windows/`、Windows 准备/打包/验证脚本 | Windows installers |
 | `lib/`、`test/`、`pubspec.yaml` | Shared Dart checks（静态分析与测试） |
 
-共享代码修改通过检查后，在对应平台的工作流页面选择 **Run workflow** 生成安装包。Windows 可选择 `all`、`x64` 或 `arm64`。
+共享代码修改通过检查后，在对应平台的工作流页面选择 **Run workflow** 生成安装包。Windows 可选择 `all`、`x64` 或 `arm64`。可在 `server_probe` 中选填自己的站点地址，额外执行协议连接和安装后 EXE 的只读连接检查；默认留空，构建不依赖某个固定站点。
