@@ -170,9 +170,10 @@ class _WorkspaceState extends State<Workspace> with WidgetsBindingObserver {
       final model = await protected(() => session.server!.editor(task));
       if (!mounted || model == null) return;
       await Navigator.of(context).push<void>(MaterialPageRoute(
-        builder: (_) => EditScreen(model: model, save: (changes, deadlines, completions) async {
+        builder: (_) => EditScreen(model: model, save: (changes, titles, deadlines, completions) async {
           final saved = await protected(() async {
-            await session.server!.save(task, changes, subtaskDeadlines: deadlines, subtaskCompletions: completions);
+            await session.server!.save(task, changes, subtaskTitles: titles,
+              subtaskDeadlines: deadlines, subtaskCompletions: completions);
             return true;
           });
           if (saved == true) await session.didWrite();
@@ -695,7 +696,7 @@ class _DetailScreenState extends State<DetailScreen> {
   Future<void> addSubtask() async {
     final result = await showDialog<ScheduleResult>(
       context: context,
-      builder: (_) => const ScheduleDialog(label: '添加子任务', withTitle: true),
+      builder: (_) => const ScheduleDialog(label: '添加子任务', initialTitle: '', actionLabel: '添加'),
     );
     if (result == null || !mounted) return;
     await change('subitem_add', extra: {
@@ -940,20 +941,22 @@ class ScheduleDialog extends StatefulWidget {
     super.key,
     required this.label,
     this.initial = (date: '', time: ''),
-    this.withTitle = false,
+    this.initialTitle,
+    this.actionLabel = '保存',
     this.completion = false,
   });
 
-  final String label;
+  final String label, actionLabel;
+  final String? initialTitle;
   final Deadline initial;
-  final bool withTitle, completion;
+  final bool completion;
 
   @override
   State<ScheduleDialog> createState() => _ScheduleDialogState();
 }
 
 class _ScheduleDialogState extends State<ScheduleDialog> {
-  final title = TextEditingController();
+  late final title = TextEditingController(text: widget.initialTitle);
   late Deadline deadline = widget.initial;
 
   @override
@@ -964,7 +967,7 @@ class _ScheduleDialogState extends State<ScheduleDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final valid = (!widget.withTitle || title.text.trim().isNotEmpty) &&
+    final valid = (widget.initialTitle == null || title.text.trim().isNotEmpty) &&
         (!widget.completion || deadline.date.isNotEmpty && deadline.time.isNotEmpty);
     return AlertDialog(
       title: Text(widget.label),
@@ -973,13 +976,13 @@ class _ScheduleDialogState extends State<ScheduleDialog> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (widget.withTitle)
+            if (widget.initialTitle != null)
               TextField(
                 controller: title,
-                autofocus: true,
+                autofocus: widget.initialTitle == '',
                 maxLength: 200,
                 onChanged: (_) => setState(() {}),
-                decoration: const InputDecoration(labelText: '摘要'),
+                decoration: const InputDecoration(labelText: '子任务名称'),
               ),
             if (widget.completion) const Text('日期和时刻按服务器时区填写。'),
             DeadlineFields(
@@ -995,7 +998,7 @@ class _ScheduleDialogState extends State<ScheduleDialog> {
         FilledButton(
           onPressed: !valid ? null :
             () => Navigator.pop(context, (title: title.text.trim(), deadline: deadline)),
-          child: Text(widget.withTitle ? '添加' : '保存'),
+          child: Text(widget.actionLabel),
         ),
       ],
     );
@@ -1005,7 +1008,8 @@ class _ScheduleDialogState extends State<ScheduleDialog> {
 class EditScreen extends StatefulWidget {
   const EditScreen({super.key, required this.model, required this.save});
   final TaskEditor model;
-  final Future<bool> Function(Map<String, String>, Map<String, Deadline>, Map<String, String>) save;
+  final Future<bool> Function(Map<String, String> changes, Map<String, String> titles,
+    Map<String, Deadline> deadlines, Map<String, String> completions) save;
 
   @override
   State<EditScreen> createState() => _EditScreenState();
@@ -1018,6 +1022,7 @@ class _EditScreenState extends State<EditScreen> {
   late String category = field('category_id');
   late Deadline deadline = (date: field('due_date'), time: field('due_time'));
   late Deadline completion = splitCompletion(field('completed_at'));
+  final subtaskTitles = <String, String>{};
   final subtaskDeadlines = <String, Deadline>{};
   final subtaskCompletions = <String, String>{};
   late String status = field('status', 'active');
@@ -1038,16 +1043,25 @@ class _EditScreenState extends State<EditScreen> {
     super.dispose();
   }
 
-  Future<void> editSubtaskDeadline(EditableSubtask subtask) async {
+  Future<void> editSubtask(EditableSubtask subtask) async {
+    final canRename = widget.model.canEditSubtaskTitle(subtask);
     final result = await showDialog<ScheduleResult>(
       context: context,
       builder: (_) => ScheduleDialog(
-        label: '编辑子任务截止时间',
+        label: canRename ? '编辑子任务' : '编辑子任务截止时间',
+        initialTitle: canRename ? subtaskTitles[subtask.id] ?? subtask.title : null,
         initial: subtaskDeadlines[subtask.id] ?? subtask.deadline,
       ),
     );
     if (!mounted || result == null) return;
     setState(() {
+      if (canRename) {
+        if (result.title == subtask.title) {
+          subtaskTitles.remove(subtask.id);
+        } else {
+          subtaskTitles[subtask.id] = result.title;
+        }
+      }
       if (result.deadline == subtask.deadline) {
         subtaskDeadlines.remove(subtask.id);
       } else {
@@ -1111,7 +1125,9 @@ class _EditScreenState extends State<EditScreen> {
             completionStamp(completion) != field('completed_at'))
           'completed_at': completionStamp(completion),
       }..removeWhere((key, value) => key != 'repeat_change_confirm' && value == field(key));
-      final saved = await widget.save(changes, Map.of(subtaskDeadlines), Map.of(subtaskCompletions));
+      final saved = await widget.save(
+        changes, Map.of(subtaskTitles), Map.of(subtaskDeadlines), Map.of(subtaskCompletions),
+      );
       if (saved && mounted) Navigator.pop(context);
     } catch (e) {
       if (mounted) setState(() => error = readableError(e));
@@ -1177,14 +1193,14 @@ class _EditScreenState extends State<EditScreen> {
           const Divider(),
           const Text('子任务', style: TextStyle(fontWeight: FontWeight.w900)),
           if (field('status') == 'done')
-            const Text('主任务已完成：可编辑子任务完成时间；恢复主任务后可修改截止时间。'),
+            const Text('主任务已完成：可编辑子任务完成时间。恢复主任务后可修改名称和截止时间。'),
           for (final subtask in widget.model.subtasks.values)
             Builder(builder: (context) {
               final due = subtaskDeadlines[subtask.id] ?? subtask.deadline;
               final editable = !busy && field('status') != 'done';
               return ListTile(
                 contentPadding: EdgeInsets.zero,
-                title: Text(subtask.title),
+                title: Text(subtaskTitles[subtask.id] ?? subtask.title),
                 subtitle: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -1200,7 +1216,7 @@ class _EditScreenState extends State<EditScreen> {
                   ],
                 ),
                 trailing: editable ? const Icon(Icons.edit_outlined) : null,
-                onTap: editable ? () => editSubtaskDeadline(subtask) : null,
+                onTap: editable ? () => editSubtask(subtask) : null,
               );
             }),
           const Divider(),

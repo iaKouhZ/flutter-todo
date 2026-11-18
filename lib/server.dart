@@ -293,6 +293,12 @@ class TaskEditor {
   final subtasks = <String, EditableSubtask>{};
   bool get readOnlyDetails => form.querySelector('input[name="title"][readonly]') != null;
   bool get confirmRepeat => form.querySelector('input[name="repeat_change_confirm"]') != null;
+
+  bool canEditSubtaskTitle(EditableSubtask subtask) {
+    final title = form.querySelector('input[name="subitem_title[${subtask.index}]"]');
+    return fields['status'] != 'done' && title != null && title.attributes['type'] != 'hidden' &&
+        !title.attributes.containsKey('readonly') && !title.attributes.containsKey('disabled');
+  }
 }
 
 class _Page {
@@ -537,7 +543,8 @@ class TodoServer {
   }
 
   Future<void> save(Task? task, Map<String, String> changes,
-      {Map<String, Deadline> subtaskDeadlines = const {},
+      {Map<String, String> subtaskTitles = const {},
+       Map<String, Deadline> subtaskDeadlines = const {},
        Map<String, String> subtaskCompletions = const {}}) async {
     final fresh = await editor(task);
     // The HTML field is only precise to the minute. Preserve the stored
@@ -546,6 +553,18 @@ class TodoServer {
     fields.removeWhere((key, _) => key.startsWith('subitem_completed_at['));
     fields.removeWhere((key, _) => ['tracked', 'pinned'].contains(key) && changes[key] == '');
     fields.addAll(changes);
+    for (final entry in subtaskTitles.entries) {
+      final subtask = fresh.subtasks[entry.key];
+      if (subtask == null) {
+        throw const TodoError('子任务列表已变化，请重新打开编辑页。');
+      }
+      if (!fresh.canEditSubtaskTitle(subtask)) {
+        throw const TodoError('子任务名称目前无法修改，请重新打开编辑页。');
+      }
+      final title = entry.value.trim();
+      if (title.isEmpty) throw const TodoError('子任务名称不能为空。');
+      fields['subitem_title[${subtask.index}]'] = title;
+    }
     if (subtaskDeadlines.isNotEmpty && fresh.fields['status'] == 'done') {
       throw const TodoError('主任务已完成，请先恢复为未完成，再编辑子任务截止时间。');
     }

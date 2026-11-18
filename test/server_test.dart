@@ -64,7 +64,7 @@ String editorForm(List<int> ids, {bool done = false}) => '''
    final (index, id) = entry;
    return '''
  <input name="subitem_id[$index]" value="$id">
- <input name="subitem_title[$index]" value="子任务 $id">
+ <input name="subitem_title[$index]" value="子任务 $id" ${done ? 'readonly' : ''}>
  <input type="date" name="subitem_due_date[$index]" value="2026-11-2$id">
  <input type="time" name="subitem_due_time[$index]" value="15:00">
  <input type="datetime-local" name="subitem_completed_at[$index]" value="${id == 2 ? '2026-11-21T16:08' : ''}">
@@ -320,6 +320,41 @@ void main() {
     written = {};
     await expectLater(client.save(task, {}, subtaskDeadlines: {'1': (date: '', time: '')}),
       throwsA(isA<TodoError>()));
+    expect(written, isEmpty);
+  });
+
+  test('renaming a subtask uses its fresh row ID and preserves its deadline and completion', () async {
+    await client.login(password);
+    final task = (await client.feed('tracked')).groups.single.tasks.single;
+    final original = await client.editor(task);
+    expect(original.canEditSubtaskTitle(original.subtasks['2']!), isTrue);
+
+    subtaskIds = [2, 1];
+    await client.save(task, {}, subtaskTitles: {'2': '  核对答案  '});
+    expect(written, containsPair('subitem_id[0]', '2'));
+    expect(written, containsPair('subitem_title[0]', '核对答案'));
+    expect(written, containsPair('subitem_due_date[0]', '2026-11-22'));
+    expect(written, containsPair('subitem_due_time[0]', '15:00'));
+    expect(written, containsPair('subitem_done[0]', '1'));
+    expect(written.containsKey('subitem_completed_at[0]'), isFalse);
+    expect(written, containsPair('subitem_title[1]', '子任务 1'));
+  });
+
+  test('blank, removed or newly read-only subtask titles are never submitted', () async {
+    await client.login(password);
+    final task = (await client.feed('tracked')).groups.single.tasks.single;
+    await expectLater(client.save(task, {}, subtaskTitles: {'2': '  '}), throwsA(isA<TodoError>()));
+    expect(written, isEmpty);
+
+    editorDone = true;
+    final completed = await client.editor(task);
+    expect(completed.canEditSubtaskTitle(completed.subtasks['2']!), isFalse);
+    await expectLater(client.save(task, {}, subtaskTitles: {'2': '核对答案'}), throwsA(isA<TodoError>()));
+    expect(written, isEmpty);
+
+    editorDone = false;
+    subtaskIds = [1];
+    await expectLater(client.save(task, {}, subtaskTitles: {'2': '核对答案'}), throwsA(isA<TodoError>()));
     expect(written, isEmpty);
   });
 
