@@ -39,6 +39,7 @@ int main() {
     std::ifstream file(profile / L"settings.dat", std::ios::binary);
     const std::string bytes((std::istreambuf_iterator<char>(file)),
                              std::istreambuf_iterator<char>());
+    file.close();
     Require(bytes.find("test-password-123") == std::string::npos, "password encrypted");
     settings.SetStartup(true);
     Require(settings.StartupEnabled(), "startup shortcut created");

@@ -27,7 +27,7 @@ void Check(HRESULT result, const char* message) {
   if (FAILED(result)) throw std::runtime_error(message);
 }
 
-ComPtr<IShellLinkW> ShellLink() {
+ComPtr<IShellLinkW> CreateStartupLinkObject() {
   ComPtr<IShellLinkW> link;
   Check(CoCreateInstance(CLSID_ShellLink, nullptr, CLSCTX_INPROC_SERVER,
                          IID_PPV_ARGS(&link)), "Cannot access Windows shortcuts.");
@@ -184,7 +184,7 @@ std::filesystem::path DeviceSettings::Shortcut() const {
 bool DeviceSettings::StartupEnabled() const {
   const auto file = Shortcut();
   if (!std::filesystem::exists(file)) return false;
-  auto link = ShellLink();
+  auto link = CreateStartupLinkObject();
   ComPtr<IPersistFile> persist;
   Check(link.As(&persist), "Cannot read the startup shortcut.");
   Check(persist->Load(file.c_str(), STGM_READ), "Cannot load the startup shortcut.");
@@ -202,7 +202,7 @@ void DeviceSettings::SetStartup(bool enabled) {
   if (std::filesystem::exists(shortcut) && !StartupEnabled()) {
     throw std::runtime_error("A different shortcut already uses the startup file name.");
   }
-  auto link = ShellLink();
+  auto link = CreateStartupLinkObject();
   const auto exe = Executable();
   Check(link->SetPath(exe.c_str()), "Cannot set the startup target.");
   Check(link->SetWorkingDirectory(exe.parent_path().c_str()), "Cannot set the startup directory.");
