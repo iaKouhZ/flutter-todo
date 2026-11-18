@@ -45,6 +45,18 @@ jobs:
           channel: stable
           architecture: x64
           cache: true
+          cache-key: todo-flutter-windows-${{ matrix.arch }}-3.44.0-native-v1
+      - name: Bootstrap native ARM64 Dart and engine
+        if: matrix.arch == 'arm64'
+        run: |
+          if ($env:PROCESSOR_ARCHITECTURE -ne 'ARM64') { throw 'Expected native ARM64 PowerShell.' }
+          Remove-Item -LiteralPath "$env:FLUTTER_ROOT/bin/cache/engine-dart-sdk.stamp" -Force -ErrorAction SilentlyContinue
+          & "$env:FLUTTER_ROOT/bin/internal/update_dart_sdk.ps1"
+          $dartVersion = & "$env:FLUTTER_ROOT/bin/dart.bat" --version 2>&1 | Out-String
+          Write-Output $dartVersion
+          if ($dartVersion -notmatch 'windows_arm64') { throw 'Expected native ARM64 Dart.' }
+          flutter precache --windows
+          if ($LASTEXITCODE -ne 0) { throw 'ARM64 engine setup failed.' }
       - name: Generate Windows project
         run: ./platform/prepare-windows.ps1
       - name: Audit registry writes
