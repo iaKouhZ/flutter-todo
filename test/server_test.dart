@@ -128,6 +128,7 @@ void main() {
   late String password;
   late bool public;
   late int credentialVersion;
+  late bool loginLocked;
   late Map<String, String> written;
   late String? completedScope;
   late List<int> subtaskIds;
@@ -138,6 +139,7 @@ void main() {
     password = '旧 口令 +&';
     public = true;
     credentialVersion = 1;
+    loginLocked = false;
     written = {};
     completedScope = null;
     subtaskIds = [1, 2];
@@ -158,6 +160,13 @@ void main() {
         final valid = fields['_csrf'] == 'test-token' &&
           request.cookies.any((c) => c.name == 'csrf' && c.value == 'test-token') &&
           fields['password'] == password;
+        if (loginLocked) {
+          response.statusCode = HttpStatus.tooManyRequests;
+          response.headers.set(HttpHeaders.retryAfterHeader, '125');
+          response.write(gate(wrong: true));
+          await response.close();
+          return;
+        }
         if (valid) {
           response.cookies.add(Cookie('admin', '$credentialVersion'));
           response.redirect(Uri.parse('/todo/index.php'));
@@ -260,6 +269,43 @@ void main() {
     expect(device.settings.containsKey('password'), isFalse);
     await restored.signIn(password);
     expect(restored.feed?.admin, isTrue);
+  });
+
+  test('a rate-limited reconnect preserves the stored password and can recover', () async {
+    final device = MemoryDevice();
+    final session = Session(device: device);
+    addTearDown(session.dispose);
+    await device.server(client.base.toString());
+    await device.password(password);
+    loginLocked = true;
+
+    await expectLater(client.login(password), throwsA(isA<LoginThrottled>()
+        .having((error) => error.retryAfterSeconds, 'retryAfterSeconds', 125)));
+    await session.initialize();
+    expect(device.settings['password'], password);
+    expect(session.error, contains('2 分 5 秒'));
+
+    loginLocked = false;
+    await session.refresh();
+    expect(session.feed?.admin, isTrue);
+    expect(session.error, isNull);
+    expect(device.settings['password'], password);
+  });
+
+  test('a revoked web session can be restored from the saved app password', () async {
+    final device = MemoryDevice();
+    final session = Session(device: device);
+    addTearDown(session.dispose);
+    await device.server(client.base.toString());
+    await device.password(password);
+    await session.initialize();
+    expect(session.admin, isTrue);
+
+    credentialVersion++;
+    await session.refresh();
+    expect(session.feed?.admin, isTrue);
+    expect(session.error, isNull);
+    expect(device.settings['password'], password);
   });
 
   test('a private server asks for a password immediately after setup', () async {

@@ -21,6 +21,16 @@ class PasswordRejected extends TodoError {
   const PasswordRejected() : super('服务器未接受这个密码。');
 }
 
+class LoginThrottled extends TodoError {
+  LoginThrottled(this.retryAfterSeconds) : super(
+    retryAfterSeconds == null
+        ? '登录尝试过多，请稍后重试。'
+        : '登录尝试过多，请在 ${retryAfterSeconds ~/ 60} 分 ${retryAfterSeconds % 60} 秒后重试。',
+  );
+
+  final int? retryAfterSeconds;
+}
+
 Uri serverAddress(String input) {
   final text = input.trim();
   if (text.isEmpty) throw const TodoError('请输入服务器地址。');
@@ -302,8 +312,9 @@ class TaskEditor {
 }
 
 class _Page {
-  _Page(this.url, this.status, this.body, [this.location]);
+  _Page(this.url, this.status, this.body, {this.location, this.retryAfter});
   final String? location;
+  final String? retryAfter;
   final Uri url;
   final int status;
   final String body;
@@ -389,7 +400,8 @@ class TodoServer {
       }
       final body = await response.transform(utf8.decoder).join().timeout(const Duration(seconds: 20));
       return _Page(target, response.statusCode, body,
-          response.headers.value(HttpHeaders.locationHeader));
+          location: response.headers.value(HttpHeaders.locationHeader),
+          retryAfter: response.headers.value(HttpHeaders.retryAfterHeader));
     } finally {
       if (Platform.isWindows) client.close(force: true);
       retry?.close(force: true);
@@ -423,9 +435,16 @@ class TodoServer {
     }
   }
 
+  void _checkLoginThrottle(_Page page) {
+    if (page.status != HttpStatus.tooManyRequests) return;
+    final seconds = int.tryParse(page.retryAfter?.trim() ?? '');
+    throw LoginThrottled(seconds != null && seconds >= 0 ? seconds : null);
+  }
+
   Future<void> login(String password) async {
     forgetSession();
     final page = await _request(_endpoint('login.php'));
+    _checkLoginThrottle(page);
     final form = page.document.querySelector('.tl-gate__form');
     final action = form?.attributes['action'];
     if (page.status != 200 || form == null || action == null || input(form, '_csrf').isEmpty) {
@@ -434,6 +453,7 @@ class TodoServer {
     final result = await _request(page.url.resolve(action), fields: {
       ...formValues(form), 'password': password,
     });
+    _checkLoginThrottle(result);
     if (_isLogin(result) && result.document.querySelector('.tl-gate__error') != null) {
       throw const PasswordRejected();
     }
