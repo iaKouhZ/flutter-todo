@@ -1,7 +1,8 @@
 package io.github.iakouhz.todo_endfield
 
-import com.sun.net.httpserver.HttpServer
-import java.net.InetSocketAddress
+import java.net.InetAddress
+import java.net.ServerSocket
+import kotlin.concurrent.thread
 import org.jsoup.Jsoup
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
@@ -28,25 +29,41 @@ class WidgetFeedTest {
 
     @Test
     fun rateLimitedLoginIsNotARejectedPassword() {
-        val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
-        server.createContext("/login.php") { exchange ->
-            val page = """<form class="tl-gate__form" action="/login/">
-                <input name="_csrf" value="fixture-token">
-            </form>""".toByteArray()
-            exchange.sendResponseHeaders(200, page.size.toLong())
-            exchange.responseBody.use { it.write(page) }
-        }
-        server.createContext("/login/") { exchange ->
-            val page = """<div class="tl-gate__error">请稍后重试</div>""".toByteArray()
-            exchange.sendResponseHeaders(429, page.size.toLong())
-            exchange.responseBody.use { it.write(page) }
-        }
-        server.start()
-        try {
-            val feed = WidgetFeed("http://127.0.0.1:${server.address.port}/")
+        ServerSocket(0, 2, InetAddress.getByName("127.0.0.1")).use { server ->
+            server.soTimeout = 5000
+            val pages = listOf(
+                "200 OK" to """<form class="tl-gate__form" action="/login/">
+                    <input name="_csrf" value="fixture-token">
+                </form>""",
+                "429 Too Many Requests" to """<div class="tl-gate__error">请稍后重试</div>""",
+            )
+            val responder = thread(isDaemon = true) {
+                for ((status, page) in pages) {
+                    server.accept().use { socket ->
+                        socket.soTimeout = 5000
+                        val input = socket.getInputStream().bufferedReader()
+                        var contentLength = 0
+                        while (true) {
+                            val header = input.readLine() ?: break
+                            if (header.isEmpty()) break
+                            if (header.startsWith("Content-Length:", ignoreCase = true)) {
+                                contentLength = header.substringAfter(':').trim().toInt()
+                            }
+                        }
+                        repeat(contentLength) { input.read() }
+                        val bytes = page.toByteArray(Charsets.UTF_8)
+                        socket.getOutputStream().apply {
+                            write(("HTTP/1.1 $status\r\nContent-Type: text/html; charset=UTF-8\r\n" +
+                                "Content-Length: ${bytes.size}\r\nConnection: close\r\n\r\n").toByteArray())
+                            write(bytes)
+                            flush()
+                        }
+                    }
+                }
+            }
+            val feed = WidgetFeed("http://127.0.0.1:${server.localPort}/")
             assertThrows(WidgetLoginThrottled::class.java) { feed.read("fixture-password") }
-        } finally {
-            server.stop(0)
+            responder.join(5000)
         }
     }
 
