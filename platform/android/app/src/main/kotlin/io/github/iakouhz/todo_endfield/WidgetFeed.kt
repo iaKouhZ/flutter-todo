@@ -10,6 +10,8 @@ import kotlin.math.abs
 import java.util.Locale
 import java.util.TimeZone
 
+internal class WidgetLoginThrottled : Exception()
+
 /** The widget reads the server-rendered list using its own short-lived session. */
 internal class WidgetFeed(server: String) {
     private val base = URI(server)
@@ -49,12 +51,14 @@ internal class WidgetFeed(server: String) {
 
     private fun login(password: String): Boolean {
         val response = request(base.resolve("login.php"))
+        if (response.statusCode() == 429) throw WidgetLoginThrottled()
         val page = response.parse()
         val form = checkNotNull(page.selectFirst("form.tl-gate__form"))
         val csrf = checkNotNull(form.selectFirst("input[name=_csrf]")).attr("value")
         val back = form.selectFirst("input[name=back]")?.attr("value").orEmpty()
         val result = request(response.url().toURI().resolve(form.attr("action")),
             mapOf("_csrf" to csrf, "back" to back, "password" to password))
+        if (result.statusCode() == 429) throw WidgetLoginThrottled()
         val document = result.parse()
         if (document.selectFirst(".tl-gate__error") != null || result.statusCode() in listOf(401, 403)) {
             return false

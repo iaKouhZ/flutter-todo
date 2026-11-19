@@ -144,6 +144,9 @@ class DeadlineWorker(context: Context, params: WorkerParameters) : Worker(contex
             val rows = WidgetFeed(url).read(settings.password)
             if (isStopped) return Result.success()
             store.publish(settings.revision, if (rows == null) "login" else "ready", rows ?: emptyList())
+        } catch (_: WidgetLoginThrottled) {
+            // Keep cached tasks; the normal periodic update can try again later.
+            return Result.success()
         } catch (_: Exception) {
             if (isStopped) return Result.success()
             store.publish(settings.revision, "offline")

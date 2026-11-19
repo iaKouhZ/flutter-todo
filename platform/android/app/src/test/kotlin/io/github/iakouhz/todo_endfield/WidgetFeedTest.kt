@@ -1,7 +1,10 @@
 package io.github.iakouhz.todo_endfield
 
+import com.sun.net.httpserver.HttpServer
+import java.net.InetSocketAddress
 import org.jsoup.Jsoup
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertThrows
 import org.junit.Test
 
 class WidgetFeedTest {
@@ -22,6 +25,30 @@ class WidgetFeedTest {
 
     private fun doc(vararg rows: String) =
         Jsoup.parse("""<main class="tl-main__scroll">${rows.joinToString("")}</main>""")
+
+    @Test
+    fun rateLimitedLoginIsNotARejectedPassword() {
+        val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        server.createContext("/login.php") { exchange ->
+            val page = """<form class="tl-gate__form" action="/login/">
+                <input name="_csrf" value="fixture-token">
+            </form>""".toByteArray()
+            exchange.sendResponseHeaders(200, page.size.toLong())
+            exchange.responseBody.use { it.write(page) }
+        }
+        server.createContext("/login/") { exchange ->
+            val page = """<div class="tl-gate__error">请稍后重试</div>""".toByteArray()
+            exchange.sendResponseHeaders(429, page.size.toLong())
+            exchange.responseBody.use { it.write(page) }
+        }
+        server.start()
+        try {
+            val feed = WidgetFeed("http://127.0.0.1:${server.address.port}/")
+            assertThrows(WidgetLoginThrottled::class.java) { feed.read("fixture-password") }
+        } finally {
+            server.stop(0)
+        }
+    }
 
     @Test
     fun ordersActualYearsAndKeepsEligibleChildrenOfCompletedOccurrences() {
