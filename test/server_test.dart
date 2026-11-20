@@ -132,6 +132,7 @@ void main() {
   late bool public;
   late int credentialVersion;
   late bool loginLocked;
+  late bool feedOffline;
   late Map<String, String> written;
   late String? completedScope;
   late List<int> subtaskIds;
@@ -143,6 +144,7 @@ void main() {
     public = true;
     credentialVersion = 1;
     loginLocked = false;
+    feedOffline = false;
     written = {};
     completedScope = null;
     subtaskIds = [1, 2];
@@ -155,7 +157,9 @@ void main() {
         c.value == '$credentialVersion');
       final path = request.uri.path;
       response.headers.contentType = ContentType.html;
-      if (path.endsWith('login.php')) {
+      if (feedOffline && path.endsWith('index.php')) {
+        response.statusCode = HttpStatus.serviceUnavailable;
+      } else if (path.endsWith('login.php')) {
         response.cookies.add(Cookie('csrf', 'test-token'));
         response.write(gate());
       } else if (path == '/todo/login/') {
@@ -289,6 +293,23 @@ void main() {
     expect((session.tab, session.category, session.query), ('all', '3', '交作业'));
     expect(device.widgetRefreshes, widgetRefreshes);
     expect(session.busy, isFalse);
+  });
+
+  test('two automatic failures mark the retained feed stale until recovery', () async {
+    final session = Session(device: MemoryDevice());
+    addTearDown(session.dispose);
+    await session.setServer(client.base.toString());
+    final previous = session.feed;
+    feedOffline = true;
+    await session.refresh(automatic: true);
+    expect(session.feedMayBeStale, isFalse);
+    await session.refresh(automatic: true);
+    expect(session.feed, same(previous));
+    expect(session.feedMayBeStale, isTrue);
+    expect(session.error, isNull);
+    feedOffline = false;
+    await session.refresh(automatic: true);
+    expect(session.feedMayBeStale, isFalse);
   });
 
   test('a rate-limited reconnect preserves the stored password and can recover', () async {

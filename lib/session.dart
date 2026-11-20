@@ -35,6 +35,8 @@ class Session extends ChangeNotifier {
   bool initialized = false;
   bool busy = false;
   bool automaticRefresh = false;
+  int _automaticFailures = 0;
+  bool get feedMayBeStale => feed != null && _automaticFailures >= 2;
   DateTime? _automaticRetryAfter;
   bool _disposed = false;
   bool admin = false;
@@ -49,6 +51,7 @@ class Session extends ChangeNotifier {
     gate = null;
     error = null;
     _automaticRetryAfter = null;
+    _automaticFailures = 0;
   }
 
   Future<void> initialize() async {
@@ -123,6 +126,7 @@ class Session extends ChangeNotifier {
       admin = feed!.admin;
       gate = null;
       error = null;
+      _automaticFailures = 0;
     } on LoginRequired {
       try {
         await _restore();
@@ -130,6 +134,7 @@ class Session extends ChangeNotifier {
         admin = feed!.admin;
         gate = null;
         error = null;
+        _automaticFailures = 0;
       } on LoginRequired {
         feed = null;
         admin = false;
@@ -177,7 +182,11 @@ class Session extends ChangeNotifier {
       tab = oldTab;
       category = oldCategory;
       query = oldQuery;
-      if (!automatic) error = readableError(e);
+      if (automatic) {
+        _automaticFailures++;
+      } else {
+        error = readableError(e);
+      }
     } finally {
       busy = false;
       automaticRefresh = false;

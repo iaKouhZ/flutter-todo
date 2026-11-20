@@ -358,11 +358,11 @@ class _WorkspaceState extends State<Workspace> with WidgetsBindingObserver {
               ),
             ],
             if (session.busy && !session.automaticRefresh) const LinearProgressIndicator(),
-            if (session.error != null)
+            if (session.error != null || session.feedMayBeStale)
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: Row(children: [
-                  Expanded(child: Text(session.error!)),
+                  Expanded(child: Text(session.error ?? '自动刷新失败，当前显示上次同步的任务。')),
                   TextButton(onPressed: session.busy ? null : session.refresh,
                     child: const Text('重试')),
                 ]),
@@ -769,19 +769,22 @@ class _DetailScreenState extends State<DetailScreen> {
       throw const TodoError('子任务列表已变化，请重新选择要编辑的子任务。');
     }
     final subtask = candidates.single;
-    if (!subtask.done || detail.subtaskCompletionForm(subtask.index) == null) {
+    final form = detail.subtaskCompletionForm(subtask.index);
+    if (!subtask.done || form == null) {
       throw const TodoError('子任务已恢复为未完成，或服务器不支持编辑完成时间。');
     }
+    final latest = form.querySelector('input[name="completed_at"]')?.attributes['max'];
     final result = await showDialog<ScheduleResult>(
       context: context,
       builder: (_) => ScheduleDialog(
         label: '编辑子任务完成时间',
         initial: splitCompletion(subtask.completedAt),
         completion: true,
+        completionLimit: latest,
       ),
     );
     if (result == null || !mounted) return;
-    final stamp = completionStamp(result.deadline);
+    final stamp = result.deadline.date.isEmpty ? '' : completionStamp(result.deadline);
     if (stamp == subtask.completedAt) return;
     if (await widget.change('subitem_done', subtask.index, {
       'subtask_title': subtask.title, 'subtask_id': subtask.id, 'completed_at': stamp,
@@ -971,10 +974,11 @@ class ScheduleDialog extends StatefulWidget {
     this.initialTitle,
     this.actionLabel = '保存',
     this.completion = false,
+    this.completionLimit,
   });
 
   final String label, actionLabel;
-  final String? initialTitle;
+  final String? initialTitle, completionLimit;
   final Deadline initial;
   final bool completion;
 
@@ -994,7 +998,10 @@ class _ScheduleDialogState extends State<ScheduleDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final valid = (widget.initialTitle == null || title.text.trim().isNotEmpty) &&
+    final limit = widget.completionLimit;
+    final tooLate = limit != null && deadline.date.isNotEmpty && deadline.time.isNotEmpty &&
+        completionStamp(deadline).compareTo(limit) > 0;
+    final valid = !tooLate && (widget.initialTitle == null || title.text.trim().isNotEmpty) &&
         (!widget.completion || deadline.date.isNotEmpty && deadline.time.isNotEmpty);
     return AlertDialog(
       title: Text(widget.label),
@@ -1011,7 +1018,7 @@ class _ScheduleDialogState extends State<ScheduleDialog> {
                 onChanged: (_) => setState(() {}),
                 decoration: const InputDecoration(labelText: '子任务名称'),
               ),
-            if (widget.completion) const Text('日期和时刻按服务器时区填写。'),
+            if (tooLate) const Text('子任务完成时间不能晚于主任务完成时间。'),
             DeadlineFields(
               value: deadline,
               onChanged: (value) => setState(() => deadline = value),
@@ -1021,6 +1028,13 @@ class _ScheduleDialogState extends State<ScheduleDialog> {
         ),
       ),
       actions: [
+        if (limit != null)
+          TextButton(
+            onPressed: () => Navigator.pop<ScheduleResult>(
+              context, (title: '', deadline: (date: '', time: '')),
+            ),
+            child: const Text('跟随主任务'),
+          ),
         TextButton(onPressed: () => Navigator.pop(context), child: const Text('取消')),
         FilledButton(
           onPressed: !valid ? null :

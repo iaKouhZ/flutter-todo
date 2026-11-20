@@ -96,7 +96,7 @@ class Task {
     return Task(
       id: row.attributes['data-task-id'] ?? '',
       title: textOf(row, '.tl-row__title'),
-      date: row.attributes['data-occur-date'] ?? '',
+      date: row.attributes['data-due-date'] ?? row.attributes['data-occur-date'] ?? '',
       deadline: textOf(row, '.tl-row__deadline'),
       category: textOf(row, '.tl-row__cat'),
       status: statuses.keys.firstWhere(
@@ -184,7 +184,10 @@ class TaskDetail {
     }
     for (final (index, row) in root!.querySelectorAll('.tl-detail__subitem').indexed) {
       final title = textOf(row, '.tl-detail__subtitle > span:first-child');
-      final completion = row.querySelector('input[name="completed_at"]')?.attributes['value'] ??
+      final effective = row.attributes['data-completed-at'];
+      final completion = effective != null && effective.length >= 16
+          ? effective.substring(0, 16).replaceFirst(' ', 'T')
+          : row.querySelector('input[name="completed_at"]')?.attributes['value'] ??
           RegExp(r'\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}').firstMatch(
             row.querySelectorAll('.tl-detail__subdue').map((node) => node.text).join(' '),
           )?.group(0)?.replaceFirst(' ', 'T') ?? '';

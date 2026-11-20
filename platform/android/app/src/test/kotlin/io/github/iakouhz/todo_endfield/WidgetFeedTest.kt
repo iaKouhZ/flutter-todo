@@ -141,6 +141,18 @@ class WidgetFeedTest {
         assertEquals("任务 15", rows.last().title)
     }
     @Test
+    fun prefersStructuredDueDatesWhenTheWebDisplayTextChanges() {
+        val child = """<li data-due-date="2027-01-01" data-due-time="00:15">
+            <span>跨年</span><span class="tl-row__subdue">自定义日期文案</span>
+            </li>"""
+        val tracked = row(1, "2027-01-18", "长期任务", child, tracked = true)
+        assertEquals(
+            listOf(WidgetRow("长期任务", "2027-01-18"), WidgetRow("↳ 跨年", "2027-01-01 00:15")),
+            WidgetFeed.rows(doc(tracked), doc(tracked), "2026-12-31 23:45"),
+        )
+    }
+
+    @Test
     fun acceptsHourCountdownsAcrossMidnightAndYearWhileKeepingParentFirst() {
         val tracked = row(1, "2027-01-18", "长期任务",
             child("跨年", "不到1小时 · 1月1日 00:15") +

@@ -129,10 +129,14 @@ internal class WidgetFeed(server: String) {
             .select("$rowSelector:not(.tl-row--done)")
             .mapNotNull { row ->
                 val id = row.attr("data-task-id")
-                val date = row.attr("data-occur-date")
+                val date = if (row.hasAttr("data-due-date")) row.attr("data-due-date") else row.attr("data-occur-date")
                 val title = row.selectFirst(".tl-row__title")?.text().orEmpty()
                 val due = row.selectFirst(".tl-row__deadline")?.text().orEmpty()
-                val time = timeAtEnd.find(due)?.value.orEmpty()
+                val time = if (row.hasAttr("data-due-time")) {
+                    row.attr("data-due-time").takeIf(timeAtEnd::matches).orEmpty()
+                } else {
+                    timeAtEnd.find(due)?.value.orEmpty()
+                }
                 if (id.isBlank() || title.isBlank() || !isoDate.matches(date)) return@mapNotNull null
                 Deadline(id, title, date, time, row.hasClass("tl-row--overdue") ||
                     "$date ${time.ifEmpty { "23:59" }}" < now)
@@ -156,11 +160,16 @@ internal class WidgetFeed(server: String) {
                 // occurrence can carry children while its series is still active.
                 val deadlines = row.select(".tl-row__subitems > li").mapNotNull { item ->
                     val title = item.selectFirst("span:first-child")?.text().orEmpty()
-                    val label = item.selectFirst(".tl-row__subdue")?.text().orEmpty()
-                    val match = subtaskLabel.matchEntire(label) ?: return@mapNotNull null
-                    val date = childDate(match, now, today, calendarDate) ?: return@mapNotNull null
                     if (title.isBlank()) return@mapNotNull null
-                    val time = match.groupValues[4]
+                    val structuredDate = item.attr("data-due-date")
+                    val (date, time) = if (isoDate.matches(structuredDate)) {
+                        structuredDate to item.attr("data-due-time").takeIf(timeAtEnd::matches).orEmpty()
+                    } else {
+                        val label = item.selectFirst(".tl-row__subdue")?.text().orEmpty()
+                        val match = subtaskLabel.matchEntire(label) ?: return@mapNotNull null
+                        val legacyDate = childDate(match, now, today, calendarDate) ?: return@mapNotNull null
+                        legacyDate to match.groupValues[4]
+                    }
                     Deadline(id, "↳ $title", date, time,
                         "$date ${time.ifEmpty { "23:59" }}" < now)
                 }
