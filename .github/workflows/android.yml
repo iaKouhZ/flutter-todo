@@ -43,7 +43,7 @@ jobs:
       - name: Verify server protocol and client behavior
         run: flutter test
       - name: Build Android APK
-        run: flutter build apk --release --build-number "$((GITHUB_RUN_NUMBER + 1))"
+        run: flutter build apk --release --build-name 1.0.1.2 --build-number "$((GITHUB_RUN_NUMBER + 1))"
       - name: Test Android widget
         working-directory: android
         run: ./gradlew :app:testReleaseUnitTest

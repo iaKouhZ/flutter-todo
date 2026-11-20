@@ -97,16 +97,36 @@ class Workspace extends StatefulWidget {
 class _WorkspaceState extends State<Workspace> with WidgetsBindingObserver {
   final session = Session();
   bool passwordPromptOpen = false;
+  Timer? refreshTimer;
+  int protectedRequests = 0;
+
+  void syncRefreshTimer(AppLifecycleState? state) {
+    final visible = state == AppLifecycleState.resumed ||
+        (Platform.isWindows && state == AppLifecycleState.inactive);
+    if (!visible) {
+      refreshTimer?.cancel();
+      refreshTimer = null;
+      return;
+    }
+    refreshTimer ??= Timer.periodic(const Duration(minutes: 1), (_) {
+      if (!mounted || !session.initialized || session.feed == null ||
+          session.gate != null || session.arrangingServer || passwordPromptOpen ||
+          protectedRequests != 0 || ModalRoute.of(context)?.isCurrent != true) return;
+      unawaited(session.refresh(automatic: true));
+    });
+  }
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    syncRefreshTimer(WidgetsBinding.instance.lifecycleState);
     unawaited(session.initialize());
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    syncRefreshTimer(state);
     if (state == AppLifecycleState.resumed && session.initialized &&
         session.feed != null && !session.arrangingServer && !passwordPromptOpen) {
       unawaited(refreshOnResume());
@@ -124,6 +144,7 @@ class _WorkspaceState extends State<Workspace> with WidgetsBindingObserver {
 
   @override
   void dispose() {
+    refreshTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     session.dispose();
     super.dispose();
@@ -154,13 +175,16 @@ class _WorkspaceState extends State<Workspace> with WidgetsBindingObserver {
   }
 
   Future<T?> protected<T>(Future<T> Function() action) async {
+    protectedRequests++;
     try {
       return await session.authorized(action);
     } on LoginRequired {
       if (!mounted || !await askPassword(session.gate ?? '登录凭证已失效，请重新输入密码。')) {
         return null;
       }
-      return session.authorized(action);
+      return await session.authorized(action);
+    } finally {
+      protectedRequests--;
     }
   }
 
@@ -263,6 +287,9 @@ class _WorkspaceState extends State<Workspace> with WidgetsBindingObserver {
             style: const TextStyle(fontWeight: FontWeight.w900)),
           actions: [
             if (Platform.isWindows)
+              IconButton(onPressed: feed == null || session.busy ? null : session.refresh,
+                tooltip: '刷新', icon: const Icon(Icons.refresh)),
+            if (Platform.isWindows)
               IconButton(
                 tooltip: '电脑版设置',
                 icon: const Icon(Icons.settings_outlined),
@@ -330,7 +357,7 @@ class _WorkspaceState extends State<Workspace> with WidgetsBindingObserver {
                 ),
               ),
             ],
-            if (session.busy) const LinearProgressIndicator(),
+            if (session.busy && !session.automaticRefresh) const LinearProgressIndicator(),
             if (session.error != null)
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -371,7 +398,7 @@ class _WorkspaceState extends State<Workspace> with WidgetsBindingObserver {
                           Text('${group.tasks.length}', style: dateStyle),
                         ])),
                       for (final task in group.tasks)
-                        TaskTile(task: task, open: () => openDetail(task),
+                        TaskTile(task: task, open: session.busy ? null : () => openDetail(task),
                           complete: session.busy ? null : () async {
                             try {
                               if (!await allowWrite()) return;
@@ -400,7 +427,7 @@ class _WorkspaceState extends State<Workspace> with WidgetsBindingObserver {
 class TaskTile extends StatelessWidget {
   const TaskTile({super.key, required this.task, required this.open, this.complete});
   final Task task;
-  final VoidCallback open;
+  final VoidCallback? open;
   final VoidCallback? complete;
 
   @override

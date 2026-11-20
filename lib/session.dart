@@ -34,6 +34,9 @@ class Session extends ChangeNotifier {
   String? gate;
   bool initialized = false;
   bool busy = false;
+  bool automaticRefresh = false;
+  DateTime? _automaticRetryAfter;
+  bool _disposed = false;
   bool admin = false;
   bool arrangingServer = false;
 
@@ -45,6 +48,7 @@ class Session extends ChangeNotifier {
     query = '';
     gate = null;
     error = null;
+    _automaticRetryAfter = null;
   }
 
   Future<void> initialize() async {
@@ -146,8 +150,12 @@ class Session extends ChangeNotifier {
     }
   }
 
-  Future<void> refresh({String? nextTab, String? nextCategory, String? nextQuery}) async {
-    if (server == null || busy) return;
+  Future<void> refresh({
+    String? nextTab, String? nextCategory, String? nextQuery, bool automatic = false,
+  }) async {
+    if (server == null || busy || _disposed) return;
+    final retryAfter = _automaticRetryAfter;
+    if (automatic && retryAfter != null && DateTime.now().isBefore(retryAfter)) return;
     final oldTab = tab;
     final oldCategory = category;
     final oldQuery = query;
@@ -155,19 +163,25 @@ class Session extends ChangeNotifier {
     category = nextCategory ?? category;
     query = nextQuery ?? query;
     busy = true;
-    error = null;
+    automaticRefresh = automatic;
+    if (!automatic) error = null;
     notifyListeners();
     try {
       await _load();
-      _scheduleWidget();
+      _automaticRetryAfter = null;
+      if (!automatic && !_disposed) _scheduleWidget();
     } catch (e) {
+      if (e is LoginThrottled) {
+        _automaticRetryAfter = DateTime.now().add(Duration(seconds: e.retryAfterSeconds ?? 60));
+      }
       tab = oldTab;
       category = oldCategory;
       query = oldQuery;
-      error = readableError(e);
+      if (!automatic) error = readableError(e);
     } finally {
       busy = false;
-      notifyListeners();
+      automaticRefresh = false;
+      if (!_disposed) notifyListeners();
     }
   }
 
@@ -222,6 +236,7 @@ class Session extends ChangeNotifier {
 
   @override
   void dispose() {
+    _disposed = true;
     server?.close();
     super.dispose();
   }

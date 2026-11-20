@@ -11,7 +11,7 @@
 [Setup]
 AppId=TodoEndfield.Desktop
 AppName=待办清单
-AppVersion=1.0.1
+AppVersion=1.0.1.2
 AppPublisher=Todo Endfield
 DefaultDirName={localappdata}\Programs\TodoEndfield
 DefaultGroupName=待办清单

@@ -100,6 +100,7 @@ String completedSubtask(int id, {bool done = true, bool parentDone = false,
 
 class MemoryDevice extends DeviceStore {
   final settings = <String, String>{};
+  int widgetRefreshes = 0;
 
   @override
   Future<Map<String, String>> read() async => Map.of(settings);
@@ -119,7 +120,9 @@ class MemoryDevice extends DeviceStore {
   }
 
   @override
-  Future<void> refreshWidget() async {}
+  Future<void> refreshWidget() async {
+    widgetRefreshes++;
+  }
 }
 
 void main() {
@@ -269,6 +272,23 @@ void main() {
     expect(device.settings.containsKey('password'), isFalse);
     await restored.signIn(password);
     expect(restored.feed?.admin, isTrue);
+  });
+
+  test('automatic refresh keeps filters and does not schedule a widget refresh', () async {
+    final device = MemoryDevice();
+    final session = Session(device: device);
+    addTearDown(session.dispose);
+    await session.setServer(client.base.toString());
+    await session.refresh(nextTab: 'all', nextCategory: '3', nextQuery: '交作业');
+    final oldFeed = session.feed;
+    final widgetRefreshes = device.widgetRefreshes;
+
+    await session.refresh(automatic: true);
+
+    expect(session.feed, isNot(same(oldFeed)));
+    expect((session.tab, session.category, session.query), ('all', '3', '交作业'));
+    expect(device.widgetRefreshes, widgetRefreshes);
+    expect(session.busy, isFalse);
   });
 
   test('a rate-limited reconnect preserves the stored password and can recover', () async {
