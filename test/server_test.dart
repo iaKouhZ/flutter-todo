@@ -486,6 +486,19 @@ void main() {
     }
   });
 
+  test('inherited completion is shown without an independent time editor', () {
+    final row = completedSubtask(11, parentDone: true, admin: false).replaceFirst(
+      '<li class="tl-detail__subitem">',
+      '<li class="tl-detail__subitem" data-own-done="0" data-completed-at="2026-11-21 16:08:27">',
+    );
+    final detail = TaskDetail(parse(home(false, detail: true, subtasks: row)));
+    final child = detail.subtasks.single;
+    expect(child.done, isTrue);
+    expect(child.ownDone, isFalse);
+    expect(child.completedAt, '2026-11-21T16:08');
+    expect(detail.subtaskCompletionForm(0), isNull);
+  });
+
   test('subtask completion edits bind stable IDs and work under a completed parent', () async {
     await client.login(password);
     final task = (await client.feed('tracked')).groups.single.tasks.single;

@@ -862,7 +862,8 @@ class _DetailScreenState extends State<DetailScreen> {
                   if (sub.completedAt.isNotEmpty &&
                       !sub.deadline.contains(sub.completedAt.replaceFirst('T', ' ')))
                     Text('完成时间 ${sub.completedAt.replaceFirst('T', ' ')}', style: dateStyle),
-                  if (sub.done)
+                  if (sub.done && sub.ownDone &&
+                      (isGuestDetail || detail.subtaskCompletionForm(sub.index) != null))
                     TextButton.icon(
                       style: TextButton.styleFrom(padding: EdgeInsets.zero),
                       onPressed: busy ? null : () => editSubtaskCompletion(sub),
@@ -1234,7 +1235,7 @@ class _EditScreenState extends State<EditScreen> {
           const Divider(),
           const Text('子任务', style: TextStyle(fontWeight: FontWeight.w900)),
           if (field('status') == 'done')
-            const Text('主任务已完成：可编辑子任务完成时间。恢复主任务后可修改名称和截止时间。'),
+            const Text('主任务已完成：可编辑独立完成的子任务时间。恢复主任务后可修改名称和截止时间。'),
           for (final subtask in widget.model.subtasks.values)
             Builder(builder: (context) {
               final due = subtaskDeadlines[subtask.id] ?? subtask.deadline;
@@ -1247,7 +1248,8 @@ class _EditScreenState extends State<EditScreen> {
                   children: [
                     Text(due.date.isEmpty ? '未设截止' :
                       [due.date, if (due.time.isNotEmpty) due.time].join(' '), style: dateStyle),
-                    if (subtask.done || status == 'done')
+                    if (subtask.done &&
+                        widget.model.fields.containsKey('subitem_completed_at[${subtask.index}]'))
                       TextButton.icon(
                         style: TextButton.styleFrom(padding: EdgeInsets.zero),
                         onPressed: busy ? null : () => editSubtaskCompletion(subtask),

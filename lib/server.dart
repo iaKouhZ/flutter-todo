@@ -171,9 +171,9 @@ class Feed {
 
 class Subtask {
   const Subtask(this.title, this.deadline, this.done, this.index,
-      {this.id = '', this.completedAt = ''});
+      {this.id = '', this.completedAt = '', this.ownDone = true});
   final String title, deadline, id, completedAt;
-  final bool done;
+  final bool done, ownDone;
   final int index;
 }
 
@@ -194,7 +194,7 @@ class TaskDetail {
       final id = row.querySelector('input[name="subitem_id"]')?.attributes['value'] ?? '';
       subtasks.add(Subtask(title, textOf(row, '.tl-detail__subdue'),
         row.querySelector('.tl-detail__subbox--on') != null, index,
-        id: id, completedAt: completion));
+        id: id, completedAt: completion, ownDone: row.attributes['data-own-done'] != '0'));
     }
     for (final row in root!.querySelectorAll('.tl-fact')) {
       facts[textOf(row, '.tl-fact__label')] = textOf(row, '.tl-fact__value');
